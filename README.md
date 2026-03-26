@@ -1,0 +1,121 @@
+# Cat Detector (YOLO26)
+
+A simple utility that checks whether a cat exists in:
+- a single image
+- a video stream (video file, webcam, or RTSP/HTTP stream)
+- all images in a folder (batch mode)
+
+## 1) Install
+
+```bash
+pip install -r requirements.txt
+```
+
+## 2) Provide YOLO26 Weights
+
+By default, the tool loads `yolo26n.pt`.
+If your weights are somewhere else, pass `--model <path_to_weights>`.
+
+## 3) Run on an Image
+
+```bash
+python cat_detector.py --model yolo26n.pt image --source path/to/photo.jpg --save out.jpg
+```
+
+Output example:
+
+```text
+cat_found=True
+top_cat_confidence=0.9123
+saved_annotated_image=out.jpg
+```
+
+## 4) Run on Video / Stream
+
+Video file:
+
+```bash
+python cat_detector.py --model yolo26n.pt video --source path/to/video.mp4 --display --output out.mp4
+```
+
+Webcam (index 0):
+
+```bash
+python cat_detector.py --model yolo26n.pt video --source 0 --display
+```
+
+RTSP stream:
+
+```bash
+python cat_detector.py --model yolo26n.pt video --source rtsp://user:pass@ip:554/stream --display
+```
+
+Tapo C310 by IP (RTSP URL built automatically):
+
+```bash
+python cat_detector.py --model yolo26n.pt video --tapo-ip 192.168.1.111 --tapo-username admin --tapo-password YOUR_PASSWORD --tapo-profile main --display
+```
+
+For non-interactive testing, limit processing:
+
+```bash
+python cat_detector.py --model yolo26n.pt video --tapo-ip 192.168.1.111 --tapo-username admin --tapo-password YOUR_PASSWORD --tapo-profile main --max-frames 100
+```
+
+Notes:
+- `--tapo-profile main` maps to `stream1`
+- `--tapo-profile sub` maps to `stream2`
+- In video mode, provide either `--source` or `--tapo-ip`
+
+When `--display` is enabled, press `q` to quit.
+By default, display mode auto-fits the full frame to your screen while preserving aspect ratio (no cropping).
+Use `--no-fit-display` if you want raw frame size instead.
+
+Video overlay behavior:
+- Status banner is shown on the left side at mid-height.
+- Text is red on a pale-yellow background.
+- A beep-beep alert is played when a cat is detected.
+
+Alert options:
+- `--beep-on-cat` / `--no-beep-on-cat` to enable or disable alert sound
+- `--beep-cooldown` to control minimum seconds between alerts (default: 3.0)
+
+Snapshot options (video mode):
+- A timestamped snapshot is saved whenever any animal is detected (cat or other supported animal classes).
+- `--snapshot-dir` sets output folder (default: `snapshots`)
+- `--snapshot-cooldown` sets minimum seconds between snapshots (default: 2.0)
+
+Telegram snapshot delivery:
+- Enable with `--telegram-send`
+- Bot token can be passed via `--telegram-token` or `TELEGRAM_BOT_TOKEN`
+- Chat id can be passed via `--telegram-chat-id` or `TELEGRAM_CHAT_ID`
+- Config file path can be set with `--telegram-config` (default: `telegram-send.conf`)
+
+Example:
+
+```bash
+python cat_detector.py --model yolo26n.pt video --tapo-ip 192.168.1.111 --tapo-username tapocam --tapo-password YOUR_PASSWORD --display --telegram-send --telegram-chat-id YOUR_CHAT_ID
+```
+
+At the end of streaming, the tool prints:
+
+```text
+cat_seen_in_stream=True
+```
+
+## 5) Run on a Folder (Batch)
+
+```bash
+python cat_detector.py --model yolo26n.pt --conf 0.10 batch --source "Cat Photo Samples" --output-dir test_outputs_conf010
+```
+
+Example output:
+
+```text
+image=photo1.jpg cat_found=True top_cat_confidence=0.2115
+image=photo2.jpg cat_found=False top_cat_confidence=0.0000
+batch_total_images=2
+batch_cat_images=1
+batch_no_cat_images=1
+saved_annotated_batch_dir=test_outputs_conf010
+```
