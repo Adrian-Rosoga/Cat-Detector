@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 secrets.env
 telegram-send.conf
+MY_README.txt

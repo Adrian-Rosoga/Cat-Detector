@@ -11,6 +11,19 @@ A simple utility that checks whether a cat exists in:
 pip install -r requirements.txt
 ```
 
+## Windows Quick Start (.bat)
+
+Use the launcher file to run the utility on Windows:
+
+```bat
+run_cat_detector.bat --model yolo26n.pt image --source "Cat Photo Samples\2026-03-22 15.49.09.jpg"
+```
+
+It will automatically:
+- use `.venv\Scripts\python.exe` when available
+- load environment variables from `secrets.env` if the file exists
+- pass all arguments through to `cat_detector.py`
+
 ## 2) Provide YOLO26 Weights
 
 By default, the tool loads `yolo26n.pt`.
