@@ -29,3 +29,23 @@ Ordered list of user prompts used during development.
 23. Ok, do it.
 24. Make the program more resilient to errors like the following one that crashed it: [h264] error while decoding MB ... bytestream -7.
 25. Run it.
+26. Verify the program detects cats, other animals, birds and people and that it sends the snapshot via Telegram in each of these cases.
+27. Remove the 3 directories starting with test_outputs from git without deleting the files.
+28. Make detect_coco.bat read the tapo username and password from secrets.env.
+29. Why is CAT_DETECTOR_MODEL in secrets.env? It is not a secret. Consider removing it.
+30. Yes, add config.env.
+31. The program is slow, probably when sending the snapshots by Telegram. Consider sending snapshots from a separate thread.
+32. Do all 3 of them.
+33. There is a small cat right now but not detected. Verify and fix.
+34. Git ignore MY_README and then commit all.
+35. Verify and update detect_coco.bat to use the best options.
+36. Replace the 1 second 1000 Hz alert tone with a much shorter, more pleasant and non intrusive audio alert.
+37. There is a false detection of a train right now. Remove train detection, not interested in it.
+38. There is a small cat standing upright now but it's detected as dog or a bird.
+39. Fix it only there is a safe way.
+40. Update README and PROMPTS_USED.
+41. Commit.
+42. Some of the prompts have not be entred in prompts_used. Why? Review them and update prompts_used.md with all prompts used from the beginning of the activity.
+43. Create a summary file with all activities, issues, fixes and enhancements from the very beginning of the activity until now.
+44. There is about a 20 second delay for the video stream, it's not real time. How can that be explained and reduced?
+45. UpdatePROMPTS_USED.md, README.md and ACTIVITY_SUMMARY.md. Commit and push after that.

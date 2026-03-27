@@ -304,6 +304,8 @@ def detect_video(args: argparse.Namespace) -> None:
 
     source, display_source = resolve_video_source(args)
     cap = cv2.VideoCapture(source)
+    if args.capture_buffer_size > 0:
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, float(args.capture_buffer_size))
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video source: {display_source}")
 
@@ -434,6 +436,8 @@ def detect_video(args: argparse.Namespace) -> None:
                 cap.release()
                 time.sleep(reconnect_sleep_s)
                 cap = cv2.VideoCapture(source)
+                if args.capture_buffer_size > 0:
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, float(args.capture_buffer_size))
                 if cap.isOpened():
                     consecutive_read_failures = 0
                     continue
@@ -684,6 +688,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--source",
         default="",
         help="Video path, stream URL (rtsp/http), or webcam index like 0",
+    )
+    video_parser.add_argument(
+        "--capture-buffer-size",
+        type=int,
+        default=1,
+        help="Preferred OpenCV capture buffer size for live video (default: 1, lower can reduce latency)",
     )
     video_parser.add_argument(
         "--tapo-ip",

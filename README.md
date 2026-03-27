@@ -133,7 +133,14 @@ Detection tuning:
 Performance options:
 - `--frame-skip` skips frames between inference runs in live video mode
 - `--inference-interval` enforces a minimum delay between inference runs
+- `--capture-buffer-size` sets preferred OpenCV live capture queue depth (default: 1, lower reduces stale-frame delay)
 - `--timing-log` prints timing diagnostics for inference, snapshot save, Telegram send, and video write
+
+Live latency tuning:
+- If live view is delayed, the most common cause is backlog: inference takes longer than incoming RTSP frame rate, so old frames queue up.
+- Keep `--capture-buffer-size 1` to minimize queued stale frames.
+- Use light throttling (`--frame-skip 1`) to reduce per-second inference load and help the loop keep up.
+- If delay persists, lower model cost first (`--model yolo26n`) and then reduce resolution (`--imgsz 960`) while keeping low confidence.
 
 Snapshot options (video mode):
 - A timestamped snapshot is saved whenever a supported trigger class is detected (person, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe).
@@ -188,5 +195,5 @@ Latest updates verified in this workspace:
 Recommended quick validation command:
 
 ```bat
-run_cat_detector.bat --model yolo26s video --tapo-ip 192.168.1.111 --tapo-username YOUR_USER --tapo-password YOUR_PASSWORD --tapo-profile main --display --max-frames 300 --beep-cooldown 1.5
+run_cat_detector.bat --model yolo26s video --tapo-ip 192.168.1.111 --tapo-username YOUR_USER --tapo-password YOUR_PASSWORD --tapo-profile main --capture-buffer-size 1 --frame-skip 1 --display --max-frames 300 --beep-cooldown 1.5
 ```
