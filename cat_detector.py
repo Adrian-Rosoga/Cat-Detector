@@ -385,6 +385,7 @@ def detect_video(args: argparse.Namespace) -> None:
     consecutive_read_failures = 0
     reconnect_attempts = 0
     last_inference_ts = 0.0
+    last_status_text: str | None = None
     beep_lock = threading.Lock()
     beep_active = False
 
@@ -460,10 +461,13 @@ def detect_video(args: argparse.Namespace) -> None:
                     break
 
                 if args.display:
+                    display_frame = frame.copy()
+                    if last_status_text is not None:
+                        draw_status_banner(display_frame, last_status_text)
                     frame_for_display = (
-                        fit_frame_to_screen(frame, display_max_width, display_max_height)
+                        fit_frame_to_screen(display_frame, display_max_width, display_max_height)
                         if args.fit_display
-                        else frame
+                        else display_frame
                     )
                     try:
                         cv2.imshow(window_name, frame_for_display)
@@ -481,10 +485,13 @@ def detect_video(args: argparse.Namespace) -> None:
                     break
 
                 if args.display:
+                    display_frame = frame.copy()
+                    if last_status_text is not None:
+                        draw_status_banner(display_frame, last_status_text)
                     frame_for_display = (
-                        fit_frame_to_screen(frame, display_max_width, display_max_height)
+                        fit_frame_to_screen(display_frame, display_max_width, display_max_height)
                         if args.fit_display
-                        else frame
+                        else display_frame
                     )
                     try:
                         cv2.imshow(window_name, frame_for_display)
@@ -518,6 +525,7 @@ def detect_video(args: argparse.Namespace) -> None:
             annotated = result.plot()
             label = "CAT DETECTED" if found else "NO CAT"
             text = f"{label} | conf={top_conf:.2f}" if found else label
+            last_status_text = text
             draw_status_banner(annotated, text)
 
             should_capture_snapshot = trigger_found
