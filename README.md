@@ -16,23 +16,47 @@ pip install -r requirements.txt
 Use the launcher file to run the utility on Windows:
 
 ```bat
-run_cat_detector.bat --model yolo26n.pt image --source "Cat Photo Samples\2026-03-22 15.49.09.jpg"
+run_cat_detector.bat --model yolo26n image --source "Cat Photo Samples\2026-03-22 15.49.09.jpg"
 ```
 
 It will automatically:
 - use `.venv\Scripts\python.exe` when available
+- load non-secret defaults from `config.env` if the file exists
 - load environment variables from `secrets.env` if the file exists
 - pass all arguments through to `cat_detector.py`
 
-## 2) Provide YOLO26 Weights
+Load order is `config.env` first, then `secrets.env` (so secrets can override defaults when needed).
 
-By default, the tool loads `yolo26n.pt`.
-If your weights are somewhere else, pass `--model <path_to_weights>`.
+## 2) Configure YOLO26 Model
+
+By default, the tool loads `yolo26n`.
+
+Supported built-in aliases:
+- `yolo26n` -> `yolo26n.pt`
+- `yolo26s` -> `yolo26s.pt`
+
+You can choose model in three ways:
+- pass alias: `--model yolo26s`
+- pass file path: `--model path/to/custom.pt`
+- set `CAT_DETECTOR_MODEL` in `config.env` for persistent local defaults
+- set `CAT_DETECTOR_MODEL` as a regular environment variable for the current session
+
+`config.env` example:
+
+```env
+CAT_DETECTOR_MODEL=yolo26s
+```
+
+PowerShell example:
+
+```powershell
+$env:CAT_DETECTOR_MODEL = "yolo26s"
+```
 
 ## 3) Run on an Image
 
 ```bash
-python cat_detector.py --model yolo26n.pt image --source path/to/photo.jpg --save out.jpg
+python cat_detector.py --model yolo26n image --source path/to/photo.jpg --save out.jpg
 ```
 
 Output example:
@@ -48,37 +72,38 @@ saved_annotated_image=out.jpg
 Video file:
 
 ```bash
-python cat_detector.py --model yolo26n.pt video --source path/to/video.mp4 --display --output out.mp4
+python cat_detector.py --model yolo26s video --source path/to/video.mp4 --display --output out.mp4
 ```
 
 Webcam (index 0):
 
 ```bash
-python cat_detector.py --model yolo26n.pt video --source 0 --display
+python cat_detector.py --model yolo26n video --source 0 --display
 ```
 
 RTSP stream:
 
 ```bash
-python cat_detector.py --model yolo26n.pt video --source rtsp://user:pass@ip:554/stream --display
+python cat_detector.py --model yolo26s video --source rtsp://user:pass@ip:554/stream --display
 ```
 
 Tapo C310 by IP (RTSP URL built automatically):
 
 ```bash
-python cat_detector.py --model yolo26n.pt video --tapo-ip 192.168.1.111 --tapo-username admin --tapo-password YOUR_PASSWORD --tapo-profile main --display
+python cat_detector.py --model yolo26n video --tapo-ip 192.168.1.111 --tapo-username admin --tapo-password YOUR_PASSWORD --tapo-profile main --display
 ```
 
 For non-interactive testing, limit processing:
 
 ```bash
-python cat_detector.py --model yolo26n.pt video --tapo-ip 192.168.1.111 --tapo-username admin --tapo-password YOUR_PASSWORD --tapo-profile main --max-frames 100
+python cat_detector.py --model yolo26s video --tapo-ip 192.168.1.111 --tapo-username admin --tapo-password YOUR_PASSWORD --tapo-profile main --max-frames 100
 ```
 
 Notes:
 - `--tapo-profile main` maps to `stream1`
 - `--tapo-profile sub` maps to `stream2`
 - In video mode, provide either `--source` or `--tapo-ip`
+- Intermittent stream decode/read errors are handled with automatic retry and reconnect attempts instead of immediate crash.
 
 When `--display` is enabled, press `q` to quit.
 By default, display mode auto-fits the full frame to your screen while preserving aspect ratio (no cropping).
@@ -94,9 +119,10 @@ Alert options:
 - `--beep-cooldown` to control minimum seconds between alerts (default: 3.0)
 
 Snapshot options (video mode):
-- A timestamped snapshot is saved whenever any animal is detected (cat or other supported animal classes).
+- A timestamped snapshot is saved whenever a supported trigger class is detected (person, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe).
 - `--snapshot-dir` sets output folder (default: `snapshots`)
 - `--snapshot-cooldown` sets minimum seconds between snapshots (default: 2.0)
+- If `--telegram-send` is enabled, snapshots are sent only when a supported trigger detection is present.
 
 Telegram snapshot delivery:
 - Enable with `--telegram-send`
@@ -107,7 +133,7 @@ Telegram snapshot delivery:
 Example:
 
 ```bash
-python cat_detector.py --model yolo26n.pt video --tapo-ip 192.168.1.111 --tapo-username tapocam --tapo-password YOUR_PASSWORD --display --telegram-send --telegram-chat-id YOUR_CHAT_ID
+python cat_detector.py --model yolo26s video --tapo-ip 192.168.1.111 --tapo-username tapocam --tapo-password YOUR_PASSWORD --display --telegram-send --telegram-chat-id YOUR_CHAT_ID
 ```
 
 At the end of streaming, the tool prints:
@@ -119,7 +145,7 @@ cat_seen_in_stream=True
 ## 5) Run on a Folder (Batch)
 
 ```bash
-python cat_detector.py --model yolo26n.pt --conf 0.10 batch --source "Cat Photo Samples" --output-dir test_outputs_conf010
+python cat_detector.py --model yolo26n --conf 0.10 batch --source "Cat Photo Samples" --output-dir test_outputs_conf010
 ```
 
 Example output:
@@ -131,4 +157,18 @@ batch_total_images=2
 batch_cat_images=1
 batch_no_cat_images=1
 saved_annotated_batch_dir=test_outputs_conf010
+```
+
+## 6) Recent Validation and Hardening
+
+Latest updates verified in this workspace:
+- Model selection is configurable via `--model` aliases (`yolo26n`, `yolo26s`) and optional `CAT_DETECTOR_MODEL` environment variable.
+- `yolo26s` was tested on the Tapo stream and completed successfully.
+- A matched `yolo26n` vs `yolo26s` comparison run (same frame limit) completed successfully.
+- Video mode now handles intermittent decode/read issues with retry and reconnect behavior instead of immediate termination.
+
+Recommended quick validation command:
+
+```bat
+run_cat_detector.bat --model yolo26s video --tapo-ip 192.168.1.111 --tapo-username YOUR_USER --tapo-password YOUR_PASSWORD --tapo-profile main --display --max-frames 300 --beep-cooldown 1.5
 ```

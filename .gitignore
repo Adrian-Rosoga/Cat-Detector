@@ -4,3 +4,15 @@ __pycache__/
 secrets.env
 telegram-send.conf
 MY_README.txt
+test_outputs/
+test_outputs_batch_conf010/
+test_outputs_conf010/
+snapshots/
+snapshots_force_send/
+snapshots_telegram_conf_test/
+snapshots_telegram_test/
+snapshots_telegram_verification/
+snapshots_telegram_verification_yolo26n/
+snapshots_test/
+verification_inputs/
+yolo26s.pt

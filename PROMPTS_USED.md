@@ -22,3 +22,10 @@ Ordered list of user prompts used during development.
 16. Try now.
 17. Create a .bat file I can use to run the utility.
 18. Create a file with all the prompts used in order to create this utility.
+19. What better model than yolo26n can I use?
+20. Setup the utility to use a configurable model, for now yolo26n and yolo26s.
+21. Test with yolo26s.
+22. Run the second test.
+23. Ok, do it.
+24. Make the program more resilient to errors like the following one that crashed it: [h264] error while decoding MB ... bytestream -7.
+25. Run it.

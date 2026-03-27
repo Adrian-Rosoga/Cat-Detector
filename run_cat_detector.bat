@@ -9,6 +9,18 @@ if not exist "%PYTHON_EXE%" (
     set "PYTHON_EXE=python"
 )
 
+if exist "config.env" (
+    for /f "usebackq tokens=1,* delims==" %%A in ("config.env") do (
+        set "KEY=%%A"
+        set "VAL=%%B"
+        if defined KEY (
+            if not "!KEY:~0,1!"=="#" (
+                set "!KEY!=!VAL!"
+            )
+        )
+    )
+)
+
 if exist "secrets.env" (
     for /f "usebackq tokens=1,* delims==" %%A in ("secrets.env") do (
         set "KEY=%%A"

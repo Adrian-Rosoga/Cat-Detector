@@ -16,6 +16,30 @@ except ImportError:
     winsound = None
 
 
+MODEL_ALIASES = {
+    "yolo26n": "yolo26n.pt",
+    "yolo26s": "yolo26s.pt",
+}
+
+
+def resolve_model_path(model_value: str) -> str:
+    """Resolve a configured model alias to a weights file path."""
+    normalized = model_value.strip()
+    if not normalized:
+        raise RuntimeError("Model value cannot be empty.")
+
+    lowered = normalized.lower()
+    if lowered in MODEL_ALIASES:
+        return MODEL_ALIASES[lowered]
+
+    if lowered.endswith(".pt"):
+        stem = lowered[:-3]
+        if stem in MODEL_ALIASES:
+            return MODEL_ALIASES[stem]
+
+    return normalized
+
+
 def parse_source(source: str) -> Union[int, str]:
     """Convert numeric camera index strings to int, leave other sources unchanged."""
     if source.isdigit():
@@ -117,9 +141,10 @@ def fit_frame_to_screen(frame, max_width: int, max_height: int):
     return cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
 
-def get_animal_class_ids(names: Union[dict, list]) -> Set[int]:
-    """Resolve class ids that correspond to common animal labels."""
-    animal_names = {
+def get_snapshot_trigger_class_ids(names: Union[dict, list]) -> Set[int]:
+    """Resolve class ids that should trigger snapshots and Telegram sends."""
+    trigger_names = {
+        "person",
         "bird",
         "cat",
         "dog",
@@ -131,18 +156,18 @@ def get_animal_class_ids(names: Union[dict, list]) -> Set[int]:
         "zebra",
         "giraffe",
     }
-    animal_ids: Set[int] = set()
+    trigger_ids: Set[int] = set()
 
     if isinstance(names, dict):
         for class_id, class_name in names.items():
-            if str(class_name).strip().lower() in animal_names:
-                animal_ids.add(int(class_id))
+            if str(class_name).strip().lower() in trigger_names:
+                trigger_ids.add(int(class_id))
     elif isinstance(names, Iterable):
         for class_id, class_name in enumerate(names):
-            if str(class_name).strip().lower() in animal_names:
-                animal_ids.add(class_id)
+            if str(class_name).strip().lower() in trigger_names:
+                trigger_ids.add(class_id)
 
-    return animal_ids
+    return trigger_ids
 
 
 def frame_has_any_class(result, class_ids: Set[int]) -> bool:
@@ -170,7 +195,9 @@ def write_telegram_config(config_path: str, token: str, chat_id: str) -> None:
         f.write(config_text)
 
 
-def send_snapshot_via_telegram(args: argparse.Namespace, snapshot_path: str) -> None:
+def send_snapshot_via_telegram(
+    args: argparse.Namespace, snapshot_path: str, trigger_detected: bool
+) -> None:
     """Send a snapshot image with telegram-send when enabled."""
     if not args.telegram_send:
         return
@@ -179,7 +206,10 @@ def send_snapshot_via_telegram(args: argparse.Namespace, snapshot_path: str) -> 
     if args.telegram_config:
         command.extend(["--config", args.telegram_config])
 
-    caption = f"Animal detected at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    if trigger_detected:
+        caption = f"Person/animal/bird detected at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    else:
+        caption = f"Stream snapshot at {time.strftime('%Y-%m-%d %H:%M:%S')}"
     command.extend(["-i", snapshot_path, "--caption", caption])
 
     try:
@@ -253,21 +283,26 @@ def detect_image(args: argparse.Namespace) -> None:
 def detect_video(args: argparse.Namespace) -> None:
     model = YOLO(args.model)
     cat_ids = get_cat_class_ids(model.names)
-    animal_ids = get_animal_class_ids(model.names)
+    trigger_ids = get_snapshot_trigger_class_ids(model.names)
 
     if not cat_ids:
         raise RuntimeError(
             "The loaded model has no class named 'cat'. Use weights that include a cat class."
         )
-    if not animal_ids:
+    if not trigger_ids:
         raise RuntimeError(
-            "The loaded model has no known animal classes for snapshots. Use compatible weights."
+            "The loaded model has no supported snapshot trigger classes. Use compatible weights."
         )
 
     source, display_source = resolve_video_source(args)
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video source: {display_source}")
+
+    max_consecutive_read_failures = 15
+    max_reconnect_attempts = 20
+    read_retry_sleep_s = 0.05
+    reconnect_sleep_s = 1.0
 
     writer = None
     if args.output:
@@ -303,6 +338,8 @@ def detect_video(args: argparse.Namespace) -> None:
     last_beep_ts = 0.0
     last_snapshot_ts = 0.0
     snapshots_saved = 0
+    consecutive_read_failures = 0
+    reconnect_attempts = 0
     beep_lock = threading.Lock()
     beep_active = False
 
@@ -333,13 +370,51 @@ def detect_video(args: argparse.Namespace) -> None:
 
     try:
         while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
+            try:
+                ok, frame = cap.read()
+            except cv2.error as exc:
+                ok, frame = False, None
+                print(f"stream_read_warning={exc}")
 
-            result = model.predict(source=frame, conf=args.conf, verbose=False)[0]
+            if not ok or frame is None or frame.size == 0:
+                consecutive_read_failures += 1
+                if consecutive_read_failures < max_consecutive_read_failures:
+                    time.sleep(read_retry_sleep_s)
+                    continue
+
+                reconnect_attempts += 1
+                print(
+                    "stream_reconnect_warning="
+                    f"read failures reached {consecutive_read_failures}; reconnect attempt {reconnect_attempts}/{max_reconnect_attempts}"
+                )
+
+                cap.release()
+                time.sleep(reconnect_sleep_s)
+                cap = cv2.VideoCapture(source)
+                if cap.isOpened():
+                    consecutive_read_failures = 0
+                    continue
+
+                if reconnect_attempts >= max_reconnect_attempts:
+                    print(
+                        "stream_ended="
+                        "maximum reconnect attempts reached after repeated read/decode failures"
+                    )
+                    break
+
+                continue
+
+            consecutive_read_failures = 0
+            reconnect_attempts = 0
+
+            try:
+                result = model.predict(source=frame, conf=args.conf, verbose=False)[0]
+            except Exception as exc:
+                print(f"frame_inference_warning={exc}")
+                continue
+
             found, top_conf = frame_has_cat(result, cat_ids)
-            animal_found = frame_has_any_class(result, animal_ids)
+            trigger_found = frame_has_any_class(result, trigger_ids)
             any_cat_seen = any_cat_seen or found
             trigger_beep_if_needed(found)
 
@@ -348,7 +423,8 @@ def detect_video(args: argparse.Namespace) -> None:
             text = f"{label} | conf={top_conf:.2f}" if found else label
             draw_status_banner(annotated, text)
 
-            if animal_found and args.snapshot_dir:
+            should_capture_snapshot = trigger_found
+            if should_capture_snapshot and args.snapshot_dir:
                 now = time.monotonic()
                 if now - last_snapshot_ts >= args.snapshot_cooldown:
                     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -358,10 +434,13 @@ def detect_video(args: argparse.Namespace) -> None:
                     cv2.imwrite(snapshot_path, annotated)
                     last_snapshot_ts = now
                     snapshots_saved += 1
-                    send_snapshot_via_telegram(args, snapshot_path)
+                    send_snapshot_via_telegram(args, snapshot_path, trigger_found)
 
             if writer is not None:
-                writer.write(annotated)
+                try:
+                    writer.write(annotated)
+                except cv2.error as exc:
+                    print(f"video_write_warning={exc}")
 
             processed_frames += 1
             if args.max_frames > 0 and processed_frames >= args.max_frames:
@@ -374,7 +453,11 @@ def detect_video(args: argparse.Namespace) -> None:
                     )
                 else:
                     frame_for_display = annotated
-                cv2.imshow(window_name, frame_for_display)
+                try:
+                    cv2.imshow(window_name, frame_for_display)
+                except cv2.error as exc:
+                    print(f"display_warning={exc}")
+                    break
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
     finally:
@@ -454,13 +537,17 @@ def detect_batch(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    default_model_value = os.getenv("CAT_DETECTOR_MODEL", "yolo26n")
     parser = argparse.ArgumentParser(
         description="Detect whether a cat exists in an image or video stream using YOLO26 weights."
     )
     parser.add_argument(
         "--model",
-        default="yolo26n.pt",
-        help="Path to YOLO26 weights (default: yolo26n.pt)",
+        default=default_model_value,
+        help=(
+            "Model alias or path to weights. Supported aliases: yolo26n, yolo26s "
+            "(default from CAT_DETECTOR_MODEL or yolo26n)."
+        ),
     )
     parser.add_argument(
         "--conf",
@@ -545,7 +632,7 @@ def build_parser() -> argparse.ArgumentParser:
     video_parser.add_argument(
         "--snapshot-dir",
         default="snapshots",
-        help="Directory for timestamped snapshots when any animal is detected",
+        help="Directory for timestamped snapshots (animal detections, or periodic when --telegram-send is enabled)",
     )
     video_parser.add_argument(
         "--snapshot-cooldown",
@@ -591,6 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    args.model = resolve_model_path(args.model)
 
     if args.mode == "image":
         detect_image(args)
