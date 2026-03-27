@@ -184,6 +184,30 @@ def frame_has_any_class(result, class_ids: Set[int]) -> bool:
     return False
 
 
+def prune_snapshots(snapshot_dir: str, max_files: int) -> None:
+    """Delete the oldest snapshot files when the directory exceeds max_files."""
+    if max_files <= 0:
+        return
+    try:
+        entries = [
+            os.path.join(snapshot_dir, f)
+            for f in os.listdir(snapshot_dir)
+            if os.path.isfile(os.path.join(snapshot_dir, f))
+        ]
+        if len(entries) <= max_files:
+            return
+        entries.sort(key=lambda p: os.path.getmtime(p))
+        to_delete = entries[: len(entries) - max_files]
+        for path in to_delete:
+            try:
+                os.remove(path)
+            except OSError as exc:
+                print(f"snapshot_prune_warning={exc}")
+        print(f"snapshot_pruned={len(to_delete)}")
+    except OSError as exc:
+        print(f"snapshot_prune_warning={exc}")
+
+
 def write_telegram_config(config_path: str, token: str, chat_id: str) -> None:
     """Write a telegram-send config file with token and chat id."""
     config_text = "\n".join(
@@ -366,6 +390,9 @@ def detect_video(args: argparse.Namespace) -> None:
                     save_started_at = time.perf_counter()
                     cv2.imwrite(snapshot_path, snapshot_image)
                     log_timing("snapshot_save", save_started_at)
+
+                    if args.snapshot_max_files > 0:
+                        prune_snapshots(args.snapshot_dir, args.snapshot_max_files)
 
                     if args.telegram_send:
                         telegram_started_at = time.perf_counter()
@@ -780,6 +807,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=2.0,
         help="Minimum seconds between saved snapshots (default: 2.0)",
+    )
+    video_parser.add_argument(
+        "--snapshot-max-files",
+        type=int,
+        default=int(os.getenv("SNAPSHOT_MAX_FILES", "1000")),
+        help="Maximum number of files to keep in the snapshot directory; oldest deleted first (default from SNAPSHOT_MAX_FILES or 1000, 0=disabled)",
     )
     video_parser.add_argument(
         "--telegram-send",

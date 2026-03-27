@@ -49,3 +49,10 @@ Ordered list of user prompts used during development.
 43. Create a summary file with all activities, issues, fixes and enhancements from the very beginning of the activity until now.
 44. There is about a 20 second delay for the video stream, it's not real time. How can that be explained and reduced?
 45. UpdatePROMPTS_USED.md, README.md and ACTIVITY_SUMMARY.md. Commit and push after that.
+46. The "NO CAT" banner is flickering. Fix that, if not revert the last change that was about decreasing the stream latency.
+47. Banner is stable.
+48. Do it. (commit the fix)
+49. Push the branch.
+50. Add cleaning the oldest photos in the snapshots directory after reaching a configurable number of files in it. The default is 1000 files, add this as a new config in config.env. Do this in a separate thread if you think it's better.
+51. Create copies of secrets.env and telegram-send.conf, add .EXAMPLE as suffix to the new files, then obfuscate the passwords and the other secrets in them. Want this so a new user knows the format of the configs.
+52. Add the 2 new files to git. Also, the snapshots dir in gitignored, however it still shows up in github. Fix that. Update prompts, activity and readme files, commit everything and sync.

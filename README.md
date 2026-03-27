@@ -5,6 +5,18 @@ A simple utility that checks whether a cat exists in:
 - a video stream (video file, webcam, or RTSP/HTTP stream)
 - all images in a folder (batch mode)
 
+## 0) Configuration Files
+
+Copy the provided example files and fill in your own values before first use:
+
+```
+secrets.env.EXAMPLE  ->  secrets.env
+telegram-send.conf.EXAMPLE  ->  telegram-send.conf
+```
+
+`secrets.env` holds private credentials (camera username/password, Telegram bot token) and is never committed to git.
+`config.env` holds non-secret runtime defaults such as the default model and snapshot file limit.
+
 ## 1) Install
 
 ```bash
@@ -147,6 +159,7 @@ Snapshot options (video mode):
 - Only trigger classes are passed to the YOLO inference engine (`classes=` filter); unrelated COCO classes such as `train` or `car` are suppressed entirely and will not appear in the overlay.
 - `--snapshot-dir` sets output folder (default: `snapshots`)
 - `--snapshot-cooldown` sets minimum seconds between snapshots (default: 2.0; `detect_coco.bat` uses 30 s to avoid Telegram flooding)
+- `--snapshot-max-files` sets the maximum number of files to keep in the snapshot directory; the oldest files are deleted when the limit is exceeded (default from `SNAPSHOT_MAX_FILES` in `config.env`, or 1000; set to 0 to disable)
 - If `--telegram-send` is enabled, snapshots are sent only when a supported trigger detection is present.
 
 Telegram snapshot delivery:

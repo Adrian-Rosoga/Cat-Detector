@@ -322,6 +322,55 @@ From the beginning of the activity to now, the Cat Detector evolved from a simpl
 
 The project is currently in a substantially stronger state than at the start of the activity and is usable for live cat monitoring on the Tapo camera with Telegram notifications.
 
+Additional improvements since the sections above:
+- stable status banner (no flicker during frame-skip/latency mode)
+- automatic snapshot directory pruning to prevent unbounded disk growth
+- example configuration files for new users
+- snapshots directory fully removed from git tracking
+
+## 24. NO CAT Banner Flicker Fix
+
+After adding frame-skip and inference-interval latency controls, the NO CAT banner began flickering during non-inference display frames.
+
+Root cause:
+- skipped and throttled frames were shown raw without the status banner
+- this caused the banner to appear only on inference frames and disappear on all others
+
+Fix applied:
+- added a `last_status_text` variable to hold the most recently computed banner label
+- on every non-inference display frame the last known banner is redrawn onto a copy of the raw frame
+- the latency improvement was fully preserved; only overlay rendering was changed
+
+Result:
+- banner is stable and no longer flickers during live viewing
+
+## 25. Snapshot Directory Pruning
+
+No upper bound existed on the number of files in the snapshot directory, which could eventually exhaust disk space.
+
+Fix applied:
+- added a `prune_snapshots()` helper that sorts files by modification time and deletes the oldest when the file count exceeds the configured limit
+- pruning runs inside the existing background snapshot worker thread after each save, so it does not affect the main frame loop
+- added `--snapshot-max-files` CLI argument (default from `SNAPSHOT_MAX_FILES` env var, fallback 1000; set to 0 to disable)
+- added `SNAPSHOT_MAX_FILES=1000` to `config.env`
+
+## 26. Example Configuration Files for New Users
+
+New users had no reference for the format of `secrets.env` and `telegram-send.conf`.
+
+Fix:
+- created `secrets.env.EXAMPLE` with all real values replaced by obvious placeholders
+- created `telegram-send.conf.EXAMPLE` with the same treatment
+- both files are committed to the repository so new users can copy and fill them in
+
+## 27. Snapshots Directory Removed from GitHub
+
+Despite `snapshots/` being listed in `.gitignore`, the snapshot JPEG files were previously committed and remained tracked, so they continued to appear on GitHub.
+
+Fix:
+- ran `git rm -r --cached snapshots/` to remove all tracked snapshots from the git index
+- the files remain locally; future snapshots will be properly ignored
+
 ## 23. Live Latency Investigation and Mitigation
 
 After the previous improvements, a new runtime issue was reported: live display lag of roughly 20 seconds.
