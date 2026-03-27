@@ -120,7 +120,7 @@ Use `--no-fit-display` if you want raw frame size instead.
 Video overlay behavior:
 - Status banner is shown on the left side at mid-height.
 - Text is red on a pale-yellow background.
-- A beep-beep alert is played when a cat is detected.
+- A short two-tone chime (~250 ms) is played when a cat is detected.
 
 Alert options:
 - `--beep-on-cat` / `--no-beep-on-cat` to enable or disable alert sound
@@ -137,8 +137,9 @@ Performance options:
 
 Snapshot options (video mode):
 - A timestamped snapshot is saved whenever a supported trigger class is detected (person, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe).
+- Only trigger classes are passed to the YOLO inference engine (`classes=` filter); unrelated COCO classes such as `train` or `car` are suppressed entirely and will not appear in the overlay.
 - `--snapshot-dir` sets output folder (default: `snapshots`)
-- `--snapshot-cooldown` sets minimum seconds between snapshots (default: 2.0)
+- `--snapshot-cooldown` sets minimum seconds between snapshots (default: 2.0; `detect_coco.bat` uses 30 s to avoid Telegram flooding)
 - If `--telegram-send` is enabled, snapshots are sent only when a supported trigger detection is present.
 
 Telegram snapshot delivery:

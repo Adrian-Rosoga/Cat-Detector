@@ -111,9 +111,11 @@ def draw_status_banner(frame, text: str) -> None:
 
 
 def play_beep_beep_alert() -> None:
-    """Play a 1 kHz alert tone for 2 seconds (Windows winsound preferred)."""
+    """Play a short, non-intrusive two-tone chime."""
     if winsound is not None:
-        winsound.Beep(1000, 2000)
+        winsound.Beep(880, 90)
+        time.sleep(0.04)
+        winsound.Beep(1175, 120)
     else:
         print("\a", end="", flush=True)
 
@@ -495,6 +497,7 @@ def detect_video(args: argparse.Namespace) -> None:
                     source=frame,
                     conf=args.conf,
                     imgsz=args.imgsz,
+                    classes=sorted(trigger_ids),
                     verbose=False,
                 )[0]
                 last_inference_ts = time.monotonic()
