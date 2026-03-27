@@ -15,4 +15,4 @@ snapshots_telegram_verification/
 snapshots_telegram_verification_yolo26n/
 snapshots_test/
 verification_inputs/
-yolo26s.pt
+*.pt

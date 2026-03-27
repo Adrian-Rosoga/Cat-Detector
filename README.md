@@ -35,6 +35,8 @@ Supported built-in aliases:
 - `yolo26n` -> `yolo26n.pt`
 - `yolo26s` -> `yolo26s.pt`
 
+Model weight files (`*.pt`) are intentionally not committed to git. If a selected model file is missing locally, Ultralytics can download it automatically on first use.
+
 You can choose model in three ways:
 - pass alias: `--model yolo26s`
 - pass file path: `--model path/to/custom.pt`
