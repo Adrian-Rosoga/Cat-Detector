@@ -1,6 +1,7 @@
 import argparse
 import ctypes
 import os
+from queue import Queue
 import subprocess
 import threading
 import time
@@ -268,7 +269,12 @@ def detect_image(args: argparse.Namespace) -> None:
             "The loaded model has no class named 'cat'. Use weights that include a cat class."
         )
 
-    result = model.predict(source=args.source, conf=args.conf, verbose=False)[0]
+    result = model.predict(
+        source=args.source,
+        conf=args.conf,
+        imgsz=args.imgsz,
+        verbose=False,
+    )[0]
     found, top_conf = frame_has_cat(result, cat_ids)
 
     print(f"cat_found={found}")
@@ -333,6 +339,40 @@ def detect_video(args: argparse.Namespace) -> None:
                 "telegram_send_warning=TELEGRAM_CHAT_ID is missing and telegram config file was not found"
             )
 
+    snapshot_queue: Queue[tuple[str, object, bool] | None] | None = None
+    snapshot_worker: threading.Thread | None = None
+
+    def log_timing(label: str, started_at: float) -> None:
+        if args.timing_log:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+            print(f"timing_{label}_ms={elapsed_ms:.1f}")
+
+    if args.snapshot_dir:
+        snapshot_queue = Queue()
+
+        def _snapshot_worker() -> None:
+            while True:
+                item = snapshot_queue.get()
+                try:
+                    if item is None:
+                        return
+
+                    snapshot_path, snapshot_image, trigger_detected = item
+
+                    save_started_at = time.perf_counter()
+                    cv2.imwrite(snapshot_path, snapshot_image)
+                    log_timing("snapshot_save", save_started_at)
+
+                    if args.telegram_send:
+                        telegram_started_at = time.perf_counter()
+                        send_snapshot_via_telegram(args, snapshot_path, trigger_detected)
+                        log_timing("telegram_send", telegram_started_at)
+                finally:
+                    snapshot_queue.task_done()
+
+        snapshot_worker = threading.Thread(target=_snapshot_worker, daemon=True)
+        snapshot_worker.start()
+
     any_cat_seen = False
     processed_frames = 0
     last_beep_ts = 0.0
@@ -340,6 +380,7 @@ def detect_video(args: argparse.Namespace) -> None:
     snapshots_saved = 0
     consecutive_read_failures = 0
     reconnect_attempts = 0
+    last_inference_ts = 0.0
     beep_lock = threading.Lock()
     beep_active = False
 
@@ -407,8 +448,57 @@ def detect_video(args: argparse.Namespace) -> None:
             consecutive_read_failures = 0
             reconnect_attempts = 0
 
+            if args.frame_skip > 0 and processed_frames % (args.frame_skip + 1) != 0:
+                processed_frames += 1
+                if args.max_frames > 0 and processed_frames >= args.max_frames:
+                    break
+
+                if args.display:
+                    frame_for_display = (
+                        fit_frame_to_screen(frame, display_max_width, display_max_height)
+                        if args.fit_display
+                        else frame
+                    )
+                    try:
+                        cv2.imshow(window_name, frame_for_display)
+                    except cv2.error as exc:
+                        print(f"display_warning={exc}")
+                        break
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
+                continue
+
+            now = time.monotonic()
+            if args.inference_interval > 0 and now - last_inference_ts < args.inference_interval:
+                processed_frames += 1
+                if args.max_frames > 0 and processed_frames >= args.max_frames:
+                    break
+
+                if args.display:
+                    frame_for_display = (
+                        fit_frame_to_screen(frame, display_max_width, display_max_height)
+                        if args.fit_display
+                        else frame
+                    )
+                    try:
+                        cv2.imshow(window_name, frame_for_display)
+                    except cv2.error as exc:
+                        print(f"display_warning={exc}")
+                        break
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
+                continue
+
             try:
-                result = model.predict(source=frame, conf=args.conf, verbose=False)[0]
+                inference_started_at = time.perf_counter()
+                result = model.predict(
+                    source=frame,
+                    conf=args.conf,
+                    imgsz=args.imgsz,
+                    verbose=False,
+                )[0]
+                last_inference_ts = time.monotonic()
+                log_timing("inference", inference_started_at)
             except Exception as exc:
                 print(f"frame_inference_warning={exc}")
                 continue
@@ -431,14 +521,16 @@ def detect_video(args: argparse.Namespace) -> None:
                     milliseconds = int((time.time() % 1) * 1000)
                     filename = f"snapshot_{timestamp}_{milliseconds:03d}.jpg"
                     snapshot_path = os.path.join(args.snapshot_dir, filename)
-                    cv2.imwrite(snapshot_path, annotated)
                     last_snapshot_ts = now
                     snapshots_saved += 1
-                    send_snapshot_via_telegram(args, snapshot_path, trigger_found)
+                    if snapshot_queue is not None:
+                        snapshot_queue.put((snapshot_path, annotated.copy(), trigger_found))
 
             if writer is not None:
                 try:
+                    write_started_at = time.perf_counter()
                     writer.write(annotated)
+                    log_timing("video_write", write_started_at)
                 except cv2.error as exc:
                     print(f"video_write_warning={exc}")
 
@@ -466,6 +558,11 @@ def detect_video(args: argparse.Namespace) -> None:
             writer.release()
         if args.display:
             cv2.destroyAllWindows()
+        if snapshot_queue is not None:
+            snapshot_queue.put(None)
+            snapshot_queue.join()
+        if snapshot_worker is not None:
+            snapshot_worker.join(timeout=5.0)
 
     print(f"cat_seen_in_stream={any_cat_seen}")
     if args.output:
@@ -512,7 +609,12 @@ def detect_batch(args: argparse.Namespace) -> None:
     no_cat_images = 0
 
     for image_path in image_paths:
-        result = model.predict(source=image_path, conf=args.conf, verbose=False)[0]
+        result = model.predict(
+            source=image_path,
+            conf=args.conf,
+            imgsz=args.imgsz,
+            verbose=False,
+        )[0]
         found, top_conf = frame_has_cat(result, cat_ids)
 
         if found:
@@ -554,6 +656,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.25,
         help="Confidence threshold (default: 0.25)",
+    )
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=640,
+        help="Inference image size in pixels; higher can help small-object detection but is slower (default: 640)",
     )
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -618,6 +726,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional limit for processed frames; 0 means no limit",
     )
     video_parser.add_argument(
+        "--frame-skip",
+        type=int,
+        default=0,
+        help="Skip this many frames between inference runs in video mode (default: 0)",
+    )
+    video_parser.add_argument(
+        "--inference-interval",
+        type=float,
+        default=0.0,
+        help="Minimum seconds between inference runs in video mode (default: 0.0)",
+    )
+    video_parser.add_argument(
         "--beep-on-cat",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -660,6 +780,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--telegram-config",
         default="telegram-send.conf",
         help="Path to telegram-send config file",
+    )
+    video_parser.add_argument(
+        "--timing-log",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Print timing diagnostics for inference, snapshot save, telegram send, and video write",
     )
 
     batch_parser = subparsers.add_parser(

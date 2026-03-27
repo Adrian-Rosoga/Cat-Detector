@@ -43,6 +43,11 @@ You can choose model in three ways:
 - set `CAT_DETECTOR_MODEL` in `config.env` for persistent local defaults
 - set `CAT_DETECTOR_MODEL` as a regular environment variable for the current session
 
+Small/distant cat tuning:
+- lower `--conf` (for example `0.10`)
+- raise `--imgsz` (for example `1280`)
+- avoid `--frame-skip` and `--inference-interval` when maximum sensitivity matters
+
 `config.env` example:
 
 ```env
@@ -106,6 +111,7 @@ Notes:
 - `--tapo-profile sub` maps to `stream2`
 - In video mode, provide either `--source` or `--tapo-ip`
 - Intermittent stream decode/read errors are handled with automatic retry and reconnect attempts instead of immediate crash.
+- Snapshot saving and Telegram sending run on a background worker to reduce frame-loop stalls.
 
 When `--display` is enabled, press `q` to quit.
 By default, display mode auto-fits the full frame to your screen while preserving aspect ratio (no cropping).
@@ -119,6 +125,15 @@ Video overlay behavior:
 Alert options:
 - `--beep-on-cat` / `--no-beep-on-cat` to enable or disable alert sound
 - `--beep-cooldown` to control minimum seconds between alerts (default: 3.0)
+
+Detection tuning:
+- `--imgsz` increases inference resolution; this helps small/far cats at the cost of speed
+- lower `--conf` if small cats are being missed
+
+Performance options:
+- `--frame-skip` skips frames between inference runs in live video mode
+- `--inference-interval` enforces a minimum delay between inference runs
+- `--timing-log` prints timing diagnostics for inference, snapshot save, Telegram send, and video write
 
 Snapshot options (video mode):
 - A timestamped snapshot is saved whenever a supported trigger class is detected (person, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe).
