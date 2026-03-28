@@ -1,9 +1,11 @@
 # Cat Detector (YOLO26)
 
-A simple utility that checks whether a cat exists in:
+An utility that checks whether a cat exists in:
 - a single image
 - a video stream (video file, webcam, or RTSP/HTTP stream)
 - all images in a folder (batch mode)
+
+<img width="1162" height="1518" alt="image" src="https://github.com/user-attachments/assets/b689979d-46b1-449f-b225-81f4db288b82" />
 
 ## 0) Configuration Files
 
