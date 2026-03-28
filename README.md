@@ -1,3 +1,13 @@
+## Windows Launcher Without Command Window
+
+For a cleaner experience, you can launch the detector with no visible command window using the included VBS script:
+
+```text
+detect.cat.vbs
+```
+
+Double-clicking detect.cat.vbs will start detect_cat.bat in the background, so only the video stream window appears (no black cmd window).
+
 # Cat Detector (With 100% Artificial Intelligence)
 
 Cat Detection & Beyond: Real-time Telegram alerts for every visitor.
@@ -131,7 +141,7 @@ Notes:
 - Intermittent stream decode/read errors are handled with automatic retry and reconnect attempts instead of immediate crash.
 - Snapshot saving and Telegram sending run on a background worker to reduce frame-loop stalls.
 
-When `--display` is enabled, press `q` to quit.
+When `--display` is enabled, press `q` to quit. The video overlay always shows a "Press q to end" watermark in the bottom left corner for clarity.
 By default, display mode auto-fits the full frame to your screen while preserving aspect ratio (no cropping).
 Use `--no-fit-display` if you want raw frame size instead.
 
@@ -211,6 +221,11 @@ Latest updates verified in this workspace:
 - A matched `yolo26n` vs `yolo26s` comparison run (same frame limit) completed successfully.
 - Video mode now handles intermittent decode/read issues with retry and reconnect behavior instead of immediate termination.
 
+
+
+## Directory Naming
+
+The directory previously named "Snapshots - Hits and some misses" is now "Some hits, some misses".
 
 Recommended quick validation command:
 

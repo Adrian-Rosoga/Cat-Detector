@@ -1,3 +1,8 @@
+## 28. Usability and Directory Improvements
+
+- Created detect.cat.vbs to launch detect_cat.bat with no visible command window, for a cleaner user experience.
+- Renamed "Snapshots - Hits and some misses" to "Some hits, some misses" for clarity.
+- Fixed video overlay watermark so "Press q to end" is always visible and never flickers, regardless of frame skipping or latency settings.
 # Cat Detector Activity Summary
 
 This file summarizes the full activity history for this workspace from the start of the work session until now, including implemented features, issues found, fixes applied, validation performed, and the current state of the project.
