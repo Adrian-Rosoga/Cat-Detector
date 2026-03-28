@@ -1,4 +1,6 @@
-# Cat Detector (YOLO26)
+# Cat Detector: (With 100% Artificial Intelligence)
+
+Cat Detection & Beyond: Real-time Telegram alerts for every visitor.
 
 An utility that checks whether a cat exists in:
 - a single image
@@ -21,7 +23,7 @@ telegram-send.conf.EXAMPLE  ->  telegram-send.conf
 
 ## 1) Install
 
-```bash
+```
 pip install -r requirements.txt
 ```
 
