@@ -1,4 +1,4 @@
-# Cat Detector: (With 100% Artificial Intelligence)
+# Cat Detector (With 100% Artificial Intelligence)
 
 Cat Detection & Beyond: Real-time Telegram alerts for every visitor.
 
