@@ -144,11 +144,11 @@ def fit_frame_to_screen(frame, max_width: int, max_height: int):
     return cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
 
-def get_snapshot_trigger_class_ids(names: Union[dict, list]) -> Set[int]:
+def get_snapshot_trigger_class_ids(
+    names: Union[dict, list], include_person: bool = True, include_bird: bool = True
+) -> Set[int]:
     """Resolve class ids that should trigger snapshots and Telegram sends."""
     trigger_names = {
-        "person",
-        "bird",
         "cat",
         "dog",
         "horse",
@@ -159,6 +159,11 @@ def get_snapshot_trigger_class_ids(names: Union[dict, list]) -> Set[int]:
         "zebra",
         "giraffe",
     }
+    if include_person:
+        trigger_names.add("person")
+    if include_bird:
+        trigger_names.add("bird")
+
     trigger_ids: Set[int] = set()
 
     if isinstance(names, dict):
@@ -182,6 +187,131 @@ def frame_has_any_class(result, class_ids: Set[int]) -> bool:
         if int(cls_id) in class_ids:
             return True
     return False
+
+
+def extract_plot_detections(result) -> list[tuple[tuple[int, int, int, int], int, float]]:
+    """Extract boxes for display reuse between inference frames."""
+    if result.boxes is None or len(result.boxes) == 0:
+        return []
+
+    boxes = result.boxes.xyxy.tolist()
+    classes = result.boxes.cls.tolist()
+    confidences = result.boxes.conf.tolist()
+    extracted: list[tuple[tuple[int, int, int, int], int, float]] = []
+
+    for xyxy, cls_id, conf in zip(boxes, classes, confidences):
+        x1, y1, x2, y2 = xyxy
+        extracted.append(
+            (
+                (int(x1), int(y1), int(x2), int(y2)),
+                int(cls_id),
+                float(conf),
+            )
+        )
+
+    return extracted
+
+
+def draw_cached_detections(
+    frame, detections: list[tuple[tuple[int, int, int, int], int, float]], names: Union[dict, list]
+) -> None:
+    """Draw cached detections on frames that skip inference to avoid flashing overlays."""
+    for (x1, y1, x2, y2), cls_id, conf in detections:
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        if isinstance(names, dict):
+            class_name = str(names.get(cls_id, cls_id))
+        elif isinstance(names, Iterable):
+            class_name = str(names[cls_id]) if 0 <= cls_id < len(names) else str(cls_id)
+        else:
+            class_name = str(cls_id)
+
+        label = f"{class_name} {conf:.2f}"
+        text_size, baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        text_w, text_h = text_size
+        box_top = max(0, y1 - text_h - baseline - 8)
+        box_bottom = box_top + text_h + baseline + 6
+        box_right = x1 + text_w + 10
+        cv2.rectangle(frame, (x1, box_top), (box_right, box_bottom), (0, 255, 0), thickness=-1)
+        cv2.putText(
+            frame,
+            label,
+            (x1 + 5, box_bottom - baseline - 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 0, 0),
+            2,
+            cv2.LINE_AA,
+        )
+
+
+def box_iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
+    """Compute IoU between two xyxy boxes."""
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+
+    inter_x1 = max(ax1, bx1)
+    inter_y1 = max(ay1, by1)
+    inter_x2 = min(ax2, bx2)
+    inter_y2 = min(ay2, by2)
+
+    inter_w = max(0, inter_x2 - inter_x1)
+    inter_h = max(0, inter_y2 - inter_y1)
+    inter_area = inter_w * inter_h
+    if inter_area <= 0:
+        return 0.0
+
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+    union = area_a + area_b - inter_area
+    if union <= 0:
+        return 0.0
+    return inter_area / union
+
+
+def smooth_plot_detections(
+    previous: list[tuple[tuple[int, int, int, int], int, float]],
+    current: list[tuple[tuple[int, int, int, int], int, float]],
+    alpha: float,
+    iou_threshold: float,
+) -> list[tuple[tuple[int, int, int, int], int, float]]:
+    """Smooth current detection boxes against previous ones to reduce visible jitter."""
+    if not previous or not current:
+        return current
+
+    used_previous: set[int] = set()
+    smoothed: list[tuple[tuple[int, int, int, int], int, float]] = []
+
+    for curr_box, curr_cls, curr_conf in current:
+        best_idx = -1
+        best_iou = 0.0
+
+        for idx, (prev_box, prev_cls, _prev_conf) in enumerate(previous):
+            if idx in used_previous or prev_cls != curr_cls:
+                continue
+            iou = box_iou(curr_box, prev_box)
+            if iou > best_iou:
+                best_iou = iou
+                best_idx = idx
+
+        if best_idx >= 0 and best_iou >= iou_threshold:
+            prev_box, _prev_cls, prev_conf = previous[best_idx]
+            used_previous.add(best_idx)
+
+            px1, py1, px2, py2 = prev_box
+            cx1, cy1, cx2, cy2 = curr_box
+
+            sx1 = int(round(px1 * (1.0 - alpha) + cx1 * alpha))
+            sy1 = int(round(py1 * (1.0 - alpha) + cy1 * alpha))
+            sx2 = int(round(px2 * (1.0 - alpha) + cx2 * alpha))
+            sy2 = int(round(py2 * (1.0 - alpha) + cy2 * alpha))
+            sconf = prev_conf * (1.0 - alpha) + curr_conf * alpha
+
+            smoothed.append(((sx1, sy1, sx2, sy2), curr_cls, sconf))
+        else:
+            smoothed.append((curr_box, curr_cls, curr_conf))
+
+    return smoothed
 
 
 def prune_snapshots(snapshot_dir: str, max_files: int) -> None:
@@ -315,7 +445,11 @@ def detect_image(args: argparse.Namespace) -> None:
 def detect_video(args: argparse.Namespace) -> None:
     model = YOLO(args.model)
     cat_ids = get_cat_class_ids(model.names)
-    trigger_ids = get_snapshot_trigger_class_ids(model.names)
+    trigger_ids = get_snapshot_trigger_class_ids(
+        model.names,
+        include_person=args.alert_person,
+        include_bird=args.alert_bird,
+    )
 
     if not cat_ids:
         raise RuntimeError(
@@ -369,6 +503,8 @@ def detect_video(args: argparse.Namespace) -> None:
 
     snapshot_queue: Queue[tuple[str, object, bool] | None] | None = None
     snapshot_worker: threading.Thread | None = None
+    stop_event = threading.Event()
+    quit_listener: threading.Thread | None = None
 
     def log_timing(label: str, started_at: float) -> None:
         if args.timing_log:
@@ -404,6 +540,20 @@ def detect_video(args: argparse.Namespace) -> None:
         snapshot_worker = threading.Thread(target=_snapshot_worker, daemon=True)
         snapshot_worker.start()
 
+    def _quit_listener() -> None:
+        while not stop_event.is_set():
+            try:
+                command = input().strip().lower()
+            except EOFError:
+                return
+            if command == "q":
+                stop_event.set()
+                return
+
+    print("Type 'q' and press Enter to stop the stream gracefully.")
+    quit_listener = threading.Thread(target=_quit_listener, daemon=True)
+    quit_listener.start()
+
     any_cat_seen = False
     processed_frames = 0
     last_beep_ts = 0.0
@@ -413,6 +563,11 @@ def detect_video(args: argparse.Namespace) -> None:
     reconnect_attempts = 0
     last_inference_ts = 0.0
     last_status_text: str | None = None
+    last_plot_detections: list[tuple[tuple[int, int, int, int], int, float]] = []
+    last_plot_detections_ts = 0.0
+    detection_overlay_hold_s = 0.8
+    detection_smoothing_alpha = 0.35
+    detection_smoothing_iou_threshold = 0.3
     beep_lock = threading.Lock()
     beep_active = False
 
@@ -443,6 +598,9 @@ def detect_video(args: argparse.Namespace) -> None:
 
     try:
         while True:
+            if stop_event.is_set():
+                break
+
             try:
                 ok, frame = cap.read()
             except cv2.error as exc:
@@ -489,6 +647,8 @@ def detect_video(args: argparse.Namespace) -> None:
 
                 if args.display:
                     display_frame = frame.copy()
+                    if last_plot_detections:
+                        draw_cached_detections(display_frame, last_plot_detections, model.names)
                     if last_status_text is not None:
                         draw_status_banner(display_frame, last_status_text)
                     frame_for_display = (
@@ -502,6 +662,7 @@ def detect_video(args: argparse.Namespace) -> None:
                         print(f"display_warning={exc}")
                         break
                     if cv2.waitKey(1) & 0xFF == ord("q"):
+                        stop_event.set()
                         break
                 continue
 
@@ -513,6 +674,8 @@ def detect_video(args: argparse.Namespace) -> None:
 
                 if args.display:
                     display_frame = frame.copy()
+                    if last_plot_detections:
+                        draw_cached_detections(display_frame, last_plot_detections, model.names)
                     if last_status_text is not None:
                         draw_status_banner(display_frame, last_status_text)
                     frame_for_display = (
@@ -526,6 +689,7 @@ def detect_video(args: argparse.Namespace) -> None:
                         print(f"display_warning={exc}")
                         break
                     if cv2.waitKey(1) & 0xFF == ord("q"):
+                        stop_event.set()
                         break
                 continue
 
@@ -546,6 +710,19 @@ def detect_video(args: argparse.Namespace) -> None:
 
             found, top_conf = frame_has_cat(result, cat_ids)
             trigger_found = frame_has_any_class(result, trigger_ids)
+            current_detections = extract_plot_detections(result)
+            current_detections = smooth_plot_detections(
+                last_plot_detections,
+                current_detections,
+                detection_smoothing_alpha,
+                detection_smoothing_iou_threshold,
+            )
+            now = time.monotonic()
+            if current_detections:
+                last_plot_detections = current_detections
+                last_plot_detections_ts = now
+            elif now - last_plot_detections_ts > detection_overlay_hold_s:
+                last_plot_detections = []
             any_cat_seen = any_cat_seen or found
             trigger_beep_if_needed(found)
 
@@ -581,20 +758,27 @@ def detect_video(args: argparse.Namespace) -> None:
                 break
 
             if args.display:
+                display_frame = frame.copy()
+                if last_plot_detections:
+                    draw_cached_detections(display_frame, last_plot_detections, model.names)
+                if last_status_text is not None:
+                    draw_status_banner(display_frame, last_status_text)
                 if args.fit_display:
                     frame_for_display = fit_frame_to_screen(
-                        annotated, display_max_width, display_max_height
+                        display_frame, display_max_width, display_max_height
                     )
                 else:
-                    frame_for_display = annotated
+                    frame_for_display = display_frame
                 try:
                     cv2.imshow(window_name, frame_for_display)
                 except cv2.error as exc:
                     print(f"display_warning={exc}")
                     break
                 if cv2.waitKey(1) & 0xFF == ord("q"):
+                    stop_event.set()
                     break
     finally:
+        stop_event.set()
         cap.release()
         if writer is not None:
             writer.release()
@@ -605,6 +789,8 @@ def detect_video(args: argparse.Namespace) -> None:
             snapshot_queue.join()
         if snapshot_worker is not None:
             snapshot_worker.join(timeout=5.0)
+        if quit_listener is not None:
+            quit_listener.join(timeout=0.2)
 
     print(f"cat_seen_in_stream={any_cat_seen}")
     if args.output:
@@ -819,6 +1005,18 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Send saved snapshots using telegram-send",
+    )
+    video_parser.add_argument(
+        "--alert-person",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable person as a snapshot/Telegram trigger class (default: enabled)",
+    )
+    video_parser.add_argument(
+        "--alert-bird",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable bird as a snapshot/Telegram trigger class (default: enabled)",
     )
     video_parser.add_argument(
         "--telegram-token",

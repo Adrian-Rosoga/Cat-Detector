@@ -48,7 +48,7 @@ if not defined SNAPSHOT_COOLDOWN (
 	set "SNAPSHOT_COOLDOWN=2"
 )
 
-call .\run_cat_detector.bat --model "%CAT_DETECTOR_MODEL%" --conf 0.10 --imgsz 1280 video --tapo-ip 192.168.1.111 --tapo-username "%TAPO_USERNAME%" --tapo-password "%TAPO_PASSWORD%" --tapo-profile main --capture-buffer-size 1 --frame-skip 1 --display --beep-cooldown 1.5 --snapshot-cooldown "%SNAPSHOT_COOLDOWN%" --telegram-send --telegram-config telegram-send.conf %*
+call .\run_cat_detector.bat --model "%CAT_DETECTOR_MODEL%" --conf 0.10 --imgsz 1280 video --tapo-ip 192.168.1.111 --tapo-username "%TAPO_USERNAME%" --tapo-password "%TAPO_PASSWORD%" --tapo-profile main --capture-buffer-size 1 --frame-skip 1 --display --beep-cooldown 1.5 --snapshot-cooldown "%SNAPSHOT_COOLDOWN%" --telegram-send --telegram-config telegram-send.conf --no-alert-person --no-alert-bird %*
 set "EXIT_CODE=%ERRORLEVEL%"
 
 popd >nul
