@@ -48,7 +48,35 @@ if not defined SNAPSHOT_COOLDOWN (
 	set "SNAPSHOT_COOLDOWN=2"
 )
 
-call .\run_cat_detector.bat --model "%CAT_DETECTOR_MODEL%" --conf 0.10 --imgsz 1280 video --tapo-ip 192.168.1.111 --tapo-username "%TAPO_USERNAME%" --tapo-password "%TAPO_PASSWORD%" --tapo-profile main --capture-buffer-size 1 --frame-skip 1 --display --beep-cooldown 1.5 --snapshot-cooldown "%SNAPSHOT_COOLDOWN%" --telegram-send --telegram-config telegram-send.conf --no-alert-person --no-alert-bird %*
+if not defined TAPO_IP (
+	echo Missing TAPO_IP in config.env
+	popd >nul
+	exit /b 1
+)
+
+REM Activate virtual environment if it exists
+if exist "%SCRIPT_DIR%\.venv\Scripts\activate.bat" (
+	call "%SCRIPT_DIR%\.venv\Scripts\activate.bat"
+)
+
+python cat_detector.py ^
+	--model "%CAT_DETECTOR_MODEL%" ^
+	--conf 0.10 ^
+	--imgsz 1280 ^
+	video ^
+	--tapo-ip %TAPO_IP% ^
+	--tapo-username "%TAPO_USERNAME%" ^
+	--tapo-password "%TAPO_PASSWORD%" ^
+	--tapo-profile main ^
+	--capture-buffer-size 1 ^
+	--frame-skip 1 ^
+	--display ^
+	--beep-cooldown 1.5 ^
+	--snapshot-cooldown "%SNAPSHOT_COOLDOWN%" ^
+	--telegram-send ^
+	--telegram-config telegram-send.conf ^
+	--no-alert-person ^
+	--no-alert-bird %*
 set "EXIT_CODE=%ERRORLEVEL%"
 
 popd >nul

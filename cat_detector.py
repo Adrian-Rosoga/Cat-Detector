@@ -1,3 +1,32 @@
+def draw_watermark_q(frame):
+    """Draw 'Press q to end' watermark at bottom left."""
+    watermark = "Press q to end"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 1.2
+    thickness = 2
+    margin_x = 14
+    margin_y = 14
+    text_size, baseline = cv2.getTextSize(watermark, font, scale, thickness)
+    text_width, text_height = text_size
+    x = margin_x
+    y = frame.shape[0] - margin_y
+    cv2.rectangle(
+        frame,
+        (x - 6, y - text_height - baseline - 6),
+        (x + text_width + 6, y + baseline + 6),
+        (200, 240, 255),
+        thickness=-1,
+    )
+    cv2.putText(
+        frame,
+        watermark,
+        (x, y),
+        font,
+        scale,
+        (0, 0, 200),
+        thickness,
+        lineType=cv2.LINE_AA,
+    )
 import argparse
 import ctypes
 import os
@@ -651,6 +680,7 @@ def detect_video(args: argparse.Namespace) -> None:
                         draw_cached_detections(display_frame, last_plot_detections, model.names)
                     if last_status_text is not None:
                         draw_status_banner(display_frame, last_status_text)
+                    draw_watermark_q(display_frame)
                     frame_for_display = (
                         fit_frame_to_screen(display_frame, display_max_width, display_max_height)
                         if args.fit_display
@@ -678,6 +708,7 @@ def detect_video(args: argparse.Namespace) -> None:
                         draw_cached_detections(display_frame, last_plot_detections, model.names)
                     if last_status_text is not None:
                         draw_status_banner(display_frame, last_status_text)
+                    draw_watermark_q(display_frame)
                     frame_for_display = (
                         fit_frame_to_screen(display_frame, display_max_width, display_max_height)
                         if args.fit_display
@@ -730,7 +761,10 @@ def detect_video(args: argparse.Namespace) -> None:
             label = "CAT DETECTED" if found else "NO CAT"
             text = f"{label} | conf={top_conf:.2f}" if found else label
             last_status_text = text
+
             draw_status_banner(annotated, text)
+
+
 
             should_capture_snapshot = trigger_found
             if should_capture_snapshot and args.snapshot_dir:
@@ -763,6 +797,7 @@ def detect_video(args: argparse.Namespace) -> None:
                     draw_cached_detections(display_frame, last_plot_detections, model.names)
                 if last_status_text is not None:
                     draw_status_banner(display_frame, last_status_text)
+                draw_watermark_q(display_frame)
                 if args.fit_display:
                     frame_for_display = fit_frame_to_screen(
                         display_frame, display_max_width, display_max_height
