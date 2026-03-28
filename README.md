@@ -29,11 +29,13 @@ pip install -r requirements.txt
 
 ## Windows Quick Start (.bat)
 
+
 Use the launcher file to run the utility on Windows:
 
 ```bat
-run_cat_detector.bat --model yolo26n image --source "Cat Photo Samples\2026-03-22 15.49.09.jpg"
+detect_cat.bat --model yolo26n image --source "Cat Photo Samples\2026-03-22 15.49.09.jpg"
 ```
+
 
 It will automatically:
 - use `.venv\Scripts\python.exe` when available
@@ -209,8 +211,9 @@ Latest updates verified in this workspace:
 - A matched `yolo26n` vs `yolo26s` comparison run (same frame limit) completed successfully.
 - Video mode now handles intermittent decode/read issues with retry and reconnect behavior instead of immediate termination.
 
+
 Recommended quick validation command:
 
 ```bat
-run_cat_detector.bat --model yolo26s video --tapo-ip 192.168.1.111 --tapo-username YOUR_USER --tapo-password YOUR_PASSWORD --tapo-profile main --capture-buffer-size 1 --frame-skip 1 --display --max-frames 300 --beep-cooldown 1.5
+detect_cat.bat --model yolo26s video --tapo-ip 192.168.1.111 --tapo-username YOUR_USER --tapo-password YOUR_PASSWORD --tapo-profile main --capture-buffer-size 1 --frame-skip 1 --display --max-frames 300 --beep-cooldown 1.5
 ```
