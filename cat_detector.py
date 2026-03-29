@@ -27,12 +27,13 @@ def draw_watermark_q(frame):
         thickness,
         lineType=cv2.LINE_AA,
     )
+
 import argparse
 import ctypes
 import os
+import threading
 from queue import Queue
 import subprocess
-import threading
 import time
 from urllib.parse import quote
 from typing import Iterable, Set, Union
@@ -525,7 +526,6 @@ def detect_video(args: argparse.Namespace) -> None:
         # Maximize the window at startup (not fullscreen)
         try:
             cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
-            cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
         except Exception:
             pass
 
@@ -824,16 +824,56 @@ def detect_video(args: argparse.Namespace) -> None:
                     stop_event.set()
                     break
                 elif key == ord("h"):
-                    # Show popup with current runtime options
+                    # Show popup with current runtime options (custom tkinter, large font, always on top, threaded)
+                    def show_options_popup(options_text):
+                        try:
+                            import tkinter as tk
+                            from tkinter import scrolledtext
+                            root = tk.Tk()
+                            root.title("Cat Detector: Current Options")
+                            root.attributes("-topmost", True)
+                            root.resizable(True, True)
+                            window_width, window_height = 600, 750
+                            root.geometry(f"{window_width}x{window_height}")
+
+                            # Dynamically determine font size to fit text
+                            min_font = 10
+                            max_font = 32
+                            font_family = "Consolas"
+                            lines = options_text.splitlines()
+                            n_lines = max(1, len(lines))
+                            max_line_len = max((len(line) for line in lines), default=1)
+
+                            # Estimate font size to fit both width and height
+                            # Assume average char width is 0.6 * font size, height is 1.7 * font size
+                            def estimate_font_size():
+                                for font_size in range(max_font, min_font - 1, -1):
+                                    est_text_width = int(max_line_len * font_size * 0.6)
+                                    est_text_height = int(n_lines * font_size * 1.7)
+                                    if est_text_width <= window_width - 40 and est_text_height <= window_height - 40:
+                                        return font_size
+                                return min_font
+
+                            font_size = estimate_font_size()
+                            font = (font_family, font_size)
+
+                            text_widget = scrolledtext.ScrolledText(root, font=font, wrap=tk.WORD)
+                            text_widget.insert(tk.END, options_text)
+                            text_widget.configure(state="disabled")
+                            text_widget.pack(expand=True, fill="both", padx=10, pady=10)
+                            def close_popup(event=None):
+                                root.destroy()
+                            root.bind("<Key>", close_popup)
+                            root.bind("<Button-1>", close_popup)
+                            root.after(100, lambda: root.focus_force())
+                            root.mainloop()
+                        except Exception:
+                            print(options_text)
                     options = []
                     for k, v in sorted(vars(args).items()):
                         options.append(f"{k} = {v}")
                     options_text = "\n".join(options)
-                    try:
-                        user32 = ctypes.windll.user32
-                        user32.MessageBoxW(0, options_text, "Cat Detector: Current Options", 0x40)
-                    except Exception:
-                        print(options_text)
+                    threading.Thread(target=show_options_popup, args=(options_text,), daemon=True).start()
     finally:
         stop_event.set()
         cap.release()
