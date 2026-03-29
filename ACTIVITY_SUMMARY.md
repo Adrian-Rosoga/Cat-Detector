@@ -1,8 +1,8 @@
-## 28. Usability and Directory Improvements
+# 28. Usability and Directory Improvements
 
-- Created detect.cat.vbs to launch detect_cat.bat with no visible command window, for a cleaner user experience.
+- Removed detect.cat.vbs and detect_cat_launcher.bat (no longer needed; video window now opens maximized and watermark shows all controls)
 - Renamed "Snapshots - Hits and some misses" to "Some hits, some misses" for clarity.
-- Fixed video overlay watermark so "Press q to end" is always visible and never flickers, regardless of frame skipping or latency settings.
+- Fixed video overlay watermark so "Press: q to end; h for active options" is always visible and never flickers, regardless of frame skipping or latency settings.
 # Cat Detector Activity Summary
 
 This file summarizes the full activity history for this workspace from the start of the work session until now, including implemented features, issues found, fixes applied, validation performed, and the current state of the project.
@@ -41,7 +41,7 @@ Enhancements included:
 
 The utility was tested against the camera at 192.168.1.111 during development.
 
-## 4. Display and Alert Improvements
+# 4. Display and Alert Improvements
 
 The live detection overlay and alert behavior were refined in multiple steps.
 
@@ -51,6 +51,9 @@ Changes made:
 - enlarged the font for better visibility
 - fixed display truncation so the preview can show the full frame
 - added a fit-to-screen option enabled by default
+- watermark now reads: Press: q to end; h for active options
+- video window opens maximized by default
+- press `h` in the video window to see current options
 
 Alert evolution:
 - initially added a beep-beep style alert when a cat is detected

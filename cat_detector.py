@@ -1,6 +1,6 @@
 def draw_watermark_q(frame):
     """Draw 'Press q to end' watermark at bottom left."""
-    watermark = "Press q to end"
+    watermark = "Press: q to end; h for active options"
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = 1.2
     thickness = 2
@@ -174,20 +174,22 @@ def fit_frame_to_screen(frame, max_width: int, max_height: int):
 
 
 def get_snapshot_trigger_class_ids(
-    names: Union[dict, list], include_person: bool = True, include_bird: bool = True
+    names: Union[dict, list], include_person: bool = True, include_bird: bool = True, include_dog: bool = True, include_bear: bool = True
 ) -> Set[int]:
     """Resolve class ids that should trigger snapshots and Telegram sends."""
     trigger_names = {
         "cat",
-        "dog",
         "horse",
         "sheep",
         "cow",
         "elephant",
-        "bear",
         "zebra",
         "giraffe",
     }
+    if include_bear:
+        trigger_names.add("bear")
+    if include_dog:
+        trigger_names.add("dog")
     if include_person:
         trigger_names.add("person")
     if include_bird:
@@ -478,6 +480,8 @@ def detect_video(args: argparse.Namespace) -> None:
         model.names,
         include_person=args.alert_person,
         include_bird=args.alert_bird,
+        include_dog=args.alert_dog,
+        include_bear=args.alert_bear,
     )
 
     if not cat_ids:
@@ -518,6 +522,12 @@ def detect_video(args: argparse.Namespace) -> None:
 
     if args.display:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        # Maximize the window at startup (not fullscreen)
+        try:
+            cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+            cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
+        except Exception:
+            pass
 
     if args.snapshot_dir:
         os.makedirs(args.snapshot_dir, exist_ok=True)
@@ -809,9 +819,21 @@ def detect_video(args: argparse.Namespace) -> None:
                 except cv2.error as exc:
                     print(f"display_warning={exc}")
                     break
-                if cv2.waitKey(1) & 0xFF == ord("q"):
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
                     stop_event.set()
                     break
+                elif key == ord("h"):
+                    # Show popup with current runtime options
+                    options = []
+                    for k, v in sorted(vars(args).items()):
+                        options.append(f"{k} = {v}")
+                    options_text = "\n".join(options)
+                    try:
+                        user32 = ctypes.windll.user32
+                        user32.MessageBoxW(0, options_text, "Cat Detector: Current Options", 0x40)
+                    except Exception:
+                        print(options_text)
     finally:
         stop_event.set()
         cap.release()
@@ -1054,6 +1076,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable/disable bird as a snapshot/Telegram trigger class (default: enabled)",
     )
     video_parser.add_argument(
+        "--alert-dog",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable dog as a snapshot/Telegram trigger class (default: enabled)",
+    )
+    video_parser.add_argument(
+        "--alert-bear",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable bear as a snapshot/Telegram trigger class (default: enabled)",
+    )
+    video_parser.add_argument(
         "--telegram-token",
         default=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         help="Telegram bot token for telegram-send config (default from TELEGRAM_BOT_TOKEN)",
@@ -1089,6 +1123,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == '?':
+        # Show popup with help/options
+        parser = build_parser()
+        help_text = parser.format_help()
+        try:
+            user32 = ctypes.windll.user32
+            user32.MessageBoxW(0, help_text, "Cat Detector Options", 0x40)
+        except Exception:
+            print(help_text)
+        sys.exit(0)
+
     parser = build_parser()
     args = parser.parse_args()
     args.model = resolve_model_path(args.model)

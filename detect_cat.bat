@@ -59,9 +59,15 @@ if exist "%SCRIPT_DIR%\.venv\Scripts\activate.bat" (
 	call "%SCRIPT_DIR%\.venv\Scripts\activate.bat"
 )
 
+echo.
+echo.
+echo Starting the Cat Detector...
+echo.
+echo.
+
 python cat_detector.py ^
 	--model "%CAT_DETECTOR_MODEL%" ^
-	--conf 0.10 ^
+	--conf 0.20 ^
 	--imgsz 1280 ^
 	video ^
 	--tapo-ip %TAPO_IP% ^
@@ -76,7 +82,9 @@ python cat_detector.py ^
 	--telegram-send ^
 	--telegram-config telegram-send.conf ^
 	--no-alert-person ^
-	--no-alert-bird %*
+	--no-alert-bird ^
+	--no-alert-dog ^
+	--no-alert-bear %*
 set "EXIT_CODE=%ERRORLEVEL%"
 
 popd >nul

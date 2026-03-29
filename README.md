@@ -1,25 +1,13 @@
-## Windows Launcher Without Command Window
-
-For a cleaner experience, you can launch the detector with no visible command window using the included VBS script:
-
-```text
-detect.cat.vbs
-```
-
-Double-clicking detect.cat.vbs will start detect_cat.bat in the background, so only the video stream window appears (no black cmd window).
-
 # Cat Detector (With 100% Artificial Intelligence)
 
 Cat Detection & Beyond: Real-time Telegram alerts for every visitor.
-
-<img width="1161" height="1422" alt="image" src="https://github.com/user-attachments/assets/a27faee6-d5ea-4194-bc51-1c8b0a15da9c" />
 
 An utility that checks whether a cat exists in:
 - a single image
 - a video stream (video file, webcam, or RTSP/HTTP stream)
 - all images in a folder (batch mode)
 
-## 0) Configuration Files
+## Configuration Files
 
 Copy the provided example files and fill in your own values before first use:
 
@@ -31,7 +19,7 @@ telegram-send.conf.EXAMPLE  ->  telegram-send.conf
 `secrets.env` holds private credentials (camera username/password, Telegram bot token) and is never committed to git.
 `config.env` holds non-secret runtime defaults such as the default model and snapshot file limit.
 
-## 1) Install
+## Install
 
 ```
 pip install -r requirements.txt
@@ -39,13 +27,11 @@ pip install -r requirements.txt
 
 ## Windows Quick Start (.bat)
 
-
 Use the launcher file to run the utility on Windows:
 
 ```bat
 detect_cat.bat --model yolo26n image --source "Cat Photo Samples\2026-03-22 15.49.09.jpg"
 ```
-
 
 It will automatically:
 - use `.venv\Scripts\python.exe` when available
@@ -55,9 +41,38 @@ It will automatically:
 
 Load order is `config.env` first, then `secrets.env` (so secrets can override defaults when needed).
 
-## 2) Configure YOLO26 Model
+## Supported Options
 
-By default, the tool loads `yolo26n`.
+- `--model` (yolo26n, yolo26s, or path to .pt)
+- `--conf` (confidence threshold)
+- `--imgsz` (image size)
+- `--display` (show annotated video window)
+- `--fit-display` (fit preview to screen)
+- `--output` (save annotated video)
+- `--snapshot-dir` (where to save snapshots)
+- `--snapshot-cooldown` (min seconds between snapshots)
+- `--snapshot-max-files` (max files in snapshot dir)
+- `--telegram-send` (enable Telegram snapshot sending)
+- `--telegram-config` (telegram-send.conf path)
+- `--alert-person`, `--alert-bird`, `--alert-dog`, `--alert-bear` (enable/disable triggers)
+- `--beep-on-cat` (audio alert)
+- `--beep-cooldown` (min seconds between beeps)
+- `--timing-log` (print timing diagnostics)
+
+### Video Window Controls
+- `q` to end
+- `h` to show current active options
+
+## Removed Files
+- detect.cat.vbs (no longer needed)
+- detect_cat_launcher.bat (no longer needed)
+
+## Changelog
+- Added options to disable dog and bear detection
+- Video window watermark updated for new controls
+- Video window opens maximized by default
+- Removed .vbs and extra .bat launcher
+- Press `h` in video window to see current options
 
 Supported built-in aliases:
 - `yolo26n` -> `yolo26n.pt`

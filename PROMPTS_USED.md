@@ -1,7 +1,7 @@
-35. Create a .vbs script to launch detect_cat.bat with no visible command window.
+# 35. Remove detect.cat.vbs and detect_cat_launcher.bat (video window now opens maximized, watermark shows all controls)
 36. Rename "Snapshots - Hits and some misses" to "Some hits, some misses".
 37. Fix watermark flicker so it is always visible.
-38. Update documentation to reflect these changes.
+38. Update documentation to reflect these changes and new options (dog/bear disable, video controls, etc).
 # Prompts Used To Create This Utility
 
 Ordered list of user prompts used during development.
