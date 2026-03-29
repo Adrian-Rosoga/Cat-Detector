@@ -3,6 +3,10 @@
 - Removed detect.cat.vbs and detect_cat_launcher.bat (no longer needed; video window now opens maximized and watermark shows all controls)
 - Renamed "Snapshots - Hits and some misses" to "Some hits, some misses" for clarity.
 - Fixed video overlay watermark so "Press: q to end; h for active options" is always visible and never flickers, regardless of frame skipping or latency settings.
+- Improved the options popup (shown with 'h') to use a dynamically sized font that auto-fits the text to the popup window, ensuring all options are visible regardless of window size or option count.
+# 29. Popup Font Auto-Fit Enhancement
+
+The options popup window (shown by pressing 'h' in the video window) now automatically adjusts the font size so that all current options fit within the popup window. This ensures the text is always readable and avoids overflow, regardless of the number of options or window size. The font size is dynamically calculated based on the window and text content.
 # Cat Detector Activity Summary
 
 This file summarizes the full activity history for this workspace from the start of the work session until now, including implemented features, issues found, fixes applied, validation performed, and the current state of the project.

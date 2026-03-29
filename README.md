@@ -61,7 +61,7 @@ Load order is `config.env` first, then `secrets.env` (so secrets can override de
 
 ### Video Window Controls
 - `q` to end
-- `h` to show current active options
+- `h` to show current active options (popup window with dynamically sized font that auto-fits to window)
 
 ## Removed Files
 - detect.cat.vbs (no longer needed)
@@ -73,6 +73,7 @@ Load order is `config.env` first, then `secrets.env` (so secrets can override de
 - Video window opens maximized by default
 - Removed .vbs and extra .bat launcher
 - Press `h` in video window to see current options
+- Options popup now uses a dynamically sized font that auto-fits the text to the popup window, ensuring all options are visible and readable
 
 Supported built-in aliases:
 - `yolo26n` -> `yolo26n.pt`

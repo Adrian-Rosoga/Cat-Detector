@@ -58,5 +58,5 @@ Ordered list of user prompts used during development.
 48. Do it. (commit the fix)
 49. Push the branch.
 50. Add cleaning the oldest photos in the snapshots directory after reaching a configurable number of files in it. The default is 1000 files, add this as a new config in config.env. Do this in a separate thread if you think it's better.
-51. Create copies of secrets.env and telegram-send.conf, add .EXAMPLE as suffix to the new files, then obfuscate the passwords and the other secrets in them. Want this so a new user knows the format of the configs.
-52. Add the 2 new files to git. Also, the snapshots dir in gitignored, however it still shows up in github. Fix that. Update prompts, activity and readme files, commit everything and sync.
+# 53. Make the text in the popup window just smaller enough to fit the current window size
+# 54. Update activity, prompts and readme. Commit and sync.
