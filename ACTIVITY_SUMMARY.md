@@ -1,12 +1,3 @@
-# 28. Usability and Directory Improvements
-
-- Removed detect.cat.vbs and detect_cat_launcher.bat (no longer needed; video window now opens maximized and watermark shows all controls)
-- Renamed "Snapshots - Hits and some misses" to "Some hits, some misses" for clarity.
-- Fixed video overlay watermark so "Press: q to end; h for active options" is always visible and never flickers, regardless of frame skipping or latency settings.
-
-# 29. Popup Font Auto-Fit Enhancement
-
-The options popup window (shown by pressing 'h' in the video window) now automatically adjusts the font size so that all current options fit within the popup window. This ensures the text is always readable and avoids overflow, regardless of the number of options or window size. The font size is dynamically calculated based on the window and text content.
 # Cat Detector Activity Summary
 
 This file summarizes the full activity history for this workspace from the start of the work session until now, including implemented features, issues found, fixes applied, validation performed, and the current state of the project.
@@ -45,7 +36,7 @@ Enhancements included:
 
 The utility was tested against the camera at 192.168.1.111 during development.
 
-# 4. Display and Alert Improvements
+## 4. Display and Alert Improvements
 
 The live detection overlay and alert behavior were refined in multiple steps.
 
@@ -340,6 +331,25 @@ Additional improvements since the sections above:
 - example configuration files for new users
 - snapshots directory fully removed from git tracking
 
+## 23. Live Latency Investigation and Mitigation
+
+After the previous improvements, a new runtime issue was reported: live display lag of roughly 20 seconds.
+
+Explanation:
+- when inference throughput is slower than incoming RTSP frame rate, frames accumulate in capture buffers
+- OpenCV then serves older queued frames, causing the preview to show delayed history rather than near-real-time output
+- high-cost settings (for example higher inference size with heavier model) increase this risk
+
+Safe mitigations implemented:
+- added a configurable `--capture-buffer-size` video argument (default: 1)
+- applied capture buffer size on initial stream open and on reconnect open
+- tuned `detect_coco.bat` defaults to include `--capture-buffer-size 1`
+- tuned `detect_coco.bat` defaults to include light load shedding via `--frame-skip 1`
+
+Operational recommendation after this change:
+- prefer `capture-buffer-size=1` for live monitoring freshness
+- if lag still appears, reduce model cost first (`yolo26n`) and then reduce `imgsz` while keeping low confidence for small-cat sensitivity
+
 ## 24. NO CAT Banner Flicker Fix
 
 After adding frame-skip and inference-interval latency controls, the NO CAT banner began flickering during non-inference display frames.
@@ -383,21 +393,12 @@ Fix:
 - ran `git rm -r --cached snapshots/` to remove all tracked snapshots from the git index
 - the files remain locally; future snapshots will be properly ignored
 
-## 23. Live Latency Investigation and Mitigation
+## 28. Usability and Directory Improvements
 
-After the previous improvements, a new runtime issue was reported: live display lag of roughly 20 seconds.
+- Removed detect.cat.vbs and detect_cat_launcher.bat (no longer needed; video window now opens maximized and watermark shows all controls)
+- Renamed "Snapshots - Hits and some misses" to "Some hits, some misses" for clarity.
+- Fixed video overlay watermark so "Press: q to end; h for active options" is always visible and never flickers, regardless of frame skipping or latency settings.
 
-Explanation:
-- when inference throughput is slower than incoming RTSP frame rate, frames accumulate in capture buffers
-- OpenCV then serves older queued frames, causing the preview to show delayed history rather than near-real-time output
-- high-cost settings (for example higher inference size with heavier model) increase this risk
+## 29. Popup Font Auto-Fit Enhancement
 
-Safe mitigations implemented:
-- added a configurable `--capture-buffer-size` video argument (default: 1)
-- applied capture buffer size on initial stream open and on reconnect open
-- tuned `detect_coco.bat` defaults to include `--capture-buffer-size 1`
-- tuned `detect_coco.bat` defaults to include light load shedding via `--frame-skip 1`
-
-Operational recommendation after this change:
-- prefer `capture-buffer-size=1` for live monitoring freshness
-- if lag still appears, reduce model cost first (`yolo26n`) and then reduce `imgsz` while keeping low confidence for small-cat sensitivity
+The options popup window (shown by pressing 'h' in the video window) now automatically adjusts the font size so that all current options fit within the popup window. This ensures the text is always readable and avoids overflow, regardless of the number of options or window size. The font size is dynamically calculated based on the window and text content.

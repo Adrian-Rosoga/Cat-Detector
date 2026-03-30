@@ -2,7 +2,11 @@
 
 Cat Detection & Beyond: Real-time Telegram alerts for every visitor.
 
+### Video Stream
+
 <img width="2560" height="1600" alt="image" src="https://github.com/user-attachments/assets/491983bc-4af6-42d0-b379-3f883e466fdd" />
+
+### Alerts on Telegram
 
 <img width="1161" height="1422" alt="image" src="https://github.com/user-attachments/assets/a27faee6-d5ea-4194-bc51-1c8b0a15da9c" />
 
@@ -66,10 +70,6 @@ Load order is `config.env` first, then `secrets.env` (so secrets can override de
 ### Video Window Controls
 - `q` to end
 - `h` to show current active options (popup window with dynamically sized font that auto-fits to window)
-
-## Removed Files
-- detect.cat.vbs (no longer needed)
-- detect_cat_launcher.bat (no longer needed)
 
 ## Changelog
 - Added options to disable dog and bear detection
@@ -240,12 +240,6 @@ Latest updates verified in this workspace:
 - `yolo26s` was tested on the Tapo stream and completed successfully.
 - A matched `yolo26n` vs `yolo26s` comparison run (same frame limit) completed successfully.
 - Video mode now handles intermittent decode/read issues with retry and reconnect behavior instead of immediate termination.
-
-
-
-## Directory Naming
-
-The directory previously named "Snapshots - Hits and some misses" is now "Some hits, some misses".
 
 Recommended quick validation command:
 
