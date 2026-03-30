@@ -1,33 +1,3 @@
-def draw_watermark_q(frame):
-    """Draw 'Press q to end' watermark at bottom left."""
-    watermark = "Press: q to end; h for active options"
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    scale = 1.2
-    thickness = 2
-    margin_x = 14
-    margin_y = 14
-    text_size, baseline = cv2.getTextSize(watermark, font, scale, thickness)
-    text_width, text_height = text_size
-    x = margin_x
-    y = frame.shape[0] - margin_y
-    cv2.rectangle(
-        frame,
-        (x - 6, y - text_height - baseline - 6),
-        (x + text_width + 6, y + baseline + 6),
-        (200, 240, 255),
-        thickness=-1,
-    )
-    cv2.putText(
-        frame,
-        watermark,
-        (x, y),
-        font,
-        scale,
-        (0, 0, 200),
-        thickness,
-        lineType=cv2.LINE_AA,
-    )
-
 import argparse
 import ctypes
 import os
@@ -120,12 +90,11 @@ def draw_status_banner(frame, text: str) -> None:
     text_size, baseline = cv2.getTextSize(text, font, scale, thickness)
     text_width, text_height = text_size
 
-    x1 = margin_x
-    banner_height = text_height + baseline + 10
-    center_y = frame.shape[0] // 2
-    y1 = max(margin_y, center_y - banner_height // 2)
-    y2 = y1 + banner_height
-    x2 = x1 + text_width + 16
+    # Place banner at upper right
+    x2 = frame.shape[1] - margin_x
+    x1 = x2 - (text_width + 16)
+    y1 = margin_y
+    y2 = y1 + text_height + baseline + 10
 
     cv2.rectangle(frame, (x1, y1), (x2, y2), (200, 240, 255), thickness=-1)
     cv2.putText(
@@ -137,6 +106,36 @@ def draw_status_banner(frame, text: str) -> None:
         (0, 0, 255),
         thickness,
         cv2.LINE_AA,
+    )
+
+def draw_watermark_q(frame):
+    """Draw 'Press q to end' watermark at bottom left."""
+    watermark = "Press: q to end; h for active options"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 1.2
+    thickness = 2
+    margin_x = 14
+    margin_y = 14
+    text_size, baseline = cv2.getTextSize(watermark, font, scale, thickness)
+    text_width, text_height = text_size
+    x = margin_x
+    y = frame.shape[0] - margin_y
+    cv2.rectangle(
+        frame,
+        (x - 6, y - text_height - baseline - 6),
+        (x + text_width + 6, y + baseline + 6),
+        (200, 240, 255),
+        thickness=-1,
+    )
+    cv2.putText(
+        frame,
+        watermark,
+        (x, y),
+        font,
+        scale,
+        (0, 0, 200),
+        thickness,
+        lineType=cv2.LINE_AA,
     )
 
 
