@@ -421,3 +421,51 @@ Documentation was also updated to describe:
 - small-object tuning guidance
 - alert sound behavior
 - trigger-class filtering behavior
+
+## 31. Intel PyTorch Wheel Investigation
+
+An attempt was made to install Intel-optimized PyTorch builds from the official Intel wheel index:
+
+```powershell
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/intel
+```
+
+Findings:
+- `torch` and `torchvision` were already present but as the plain CPU build (`2.11.0+cpu`)
+- `torchaudio` is not published on the Intel index at all
+- A force-reinstall of `torch` from the Intel index also failed with no matching distribution
+- Root cause: the Intel XPU wheel index only publishes wheels for Python 3.8–3.11; the project virtual environment uses Python 3.13.2
+
+`torch.xpu.is_available()` returned `False` confirming no Intel XPU support is active.
+
+Options available:
+1. Wait for Intel to publish Python 3.13 wheels (no public timeline)
+2. Downgrade the project venv to Python 3.11 and reinstall from the Intel index
+3. Use the OpenVINO path instead: export the model with `yolo export format=openvino` and run with `--device CPU` or `--device GPU`
+
+Option 3 (OpenVINO) is the most practical with the current Python 3.13 setup and does not require Intel PyTorch wheels.
+
+## 32. OpenVINO Export and Benchmarking
+
+Option 3 (OpenVINO) was pursued. OpenVINO 2026.0.0 was installed and both YOLO models were exported to OpenVINO IR format.
+
+Steps performed:
+- installed `openvino` and `openvino-telemetry` via pip (Python 3.13 compatible)
+- confirmed OpenVINO devices: `['CPU', 'GPU']` — Intel Iris Xe is visible as `GPU`
+- exported `yolo26s.pt` → `yolo26s_openvino_model/` (36.7 MB)
+- exported `yolo26n.pt` → `yolo26n_openvino_model/` (9.7 MB)
+
+Benchmark results (640×640 dummy frame, 5 runs average):
+- OpenVINO CPU: 315 ms/frame
+- PyTorch CPU:  238 ms/frame
+- Speedup: 0.75× (OpenVINO CPU was slower on this hardware)
+
+Notes on GPU routing:
+- OpenVINO's `Core().available_devices` does include `GPU` (Intel Iris Xe)
+- Ultralytics' `select_device()` is PyTorch-focused and rejects `device='GPU'` — it only accepts CUDA device references
+- True GPU routing via OpenVINO would require deeper integration beyond what the `--device` argument currently supports through Ultralytics
+
+Conclusion:
+- PyTorch CPU inference is already well-optimised on the Intel i7-1360P for this model size
+- OpenVINO CPU does not provide a speedup on this machine via the Ultralytics wrapper
+- The exported OpenVINO models are retained and usable via the new `--model yolo26s_ov` and `--model yolo26n_ov` aliases added to the code

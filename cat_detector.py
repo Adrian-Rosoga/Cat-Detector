@@ -20,6 +20,8 @@ except ImportError:
 MODEL_ALIASES = {
     "yolo26n": "yolo26n.pt",
     "yolo26s": "yolo26s.pt",
+    "yolo26n_ov": "yolo26n_openvino_model",
+    "yolo26s_ov": "yolo26s_openvino_model",
 }
 
 

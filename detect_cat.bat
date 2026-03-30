@@ -44,6 +44,10 @@ if not defined CAT_DETECTOR_MODEL (
 	set "CAT_DETECTOR_MODEL=yolo26s"
 )
 
+if not defined CAT_DETECTOR_DEVICE (
+	set "CAT_DETECTOR_DEVICE=auto"
+)
+
 if not defined SNAPSHOT_COOLDOWN (
 	set "SNAPSHOT_COOLDOWN=2"
 )
@@ -67,6 +71,7 @@ echo.
 
 python cat_detector.py ^
 	--model "%CAT_DETECTOR_MODEL%" ^
+	--device "%CAT_DETECTOR_DEVICE%" ^
 	--conf 0.20 ^
 	--imgsz 1280 ^
 	video ^
