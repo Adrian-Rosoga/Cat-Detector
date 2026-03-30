@@ -2,6 +2,8 @@
 
 Cat Detection & Beyond: Real-time Telegram alerts for every visitor.
 
+<img width="2560" height="1600" alt="image" src="https://github.com/user-attachments/assets/491983bc-4af6-42d0-b379-3f883e466fdd" />
+
 <img width="1161" height="1422" alt="image" src="https://github.com/user-attachments/assets/a27faee6-d5ea-4194-bc51-1c8b0a15da9c" />
 
 An utility that checks whether a cat exists in:
