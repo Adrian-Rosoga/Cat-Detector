@@ -258,11 +258,6 @@ Files updated during the session included:
 Documentation additions covered:
 - model configuration
 - config.env and secrets.env roles
-- resilience behavior
-- performance options
-- small-object tuning guidance
-- alert sound behavior
-- trigger-class filtering behavior
 
 ## 17. Prompt History Maintenance
 
@@ -402,3 +397,27 @@ Fix:
 ## 29. Popup Font Auto-Fit Enhancement
 
 The options popup window (shown by pressing 'h' in the video window) now automatically adjusts the font size so that all current options fit within the popup window. This ensures the text is always readable and avoids overflow, regardless of the number of options or window size. The font size is dynamically calculated based on the window and text content.
+
+## 30. Device Selection and Intel OpenVINO Support
+
+To support Intel hardware more explicitly, inference device selection was added to the CLI.
+
+Changes made:
+- added global `--device` option with `auto` default
+- added `CAT_DETECTOR_DEVICE` environment/config support
+- passed the selected device through all YOLO predict paths in image, video, and batch modes
+- added runtime diagnostics to print requested and effective inference device values when available
+
+Practical outcome:
+- the project can now be run more explicitly on CPU or on backends that Ultralytics/OpenVINO can use
+- this is especially relevant for Intel Iris Xe systems, where CUDA and ROCm are not available and OpenVINO is the realistic acceleration path
+
+Documentation was also updated to describe:
+- how to use `--device`
+- how to export a model to OpenVINO format
+- how to run the detector with an OpenVINO-exported model targeting Intel GPU or CPU
+- resilience behavior
+- performance options
+- small-object tuning guidance
+- alert sound behavior
+- trigger-class filtering behavior

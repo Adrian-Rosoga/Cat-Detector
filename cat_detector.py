@@ -23,6 +23,30 @@ MODEL_ALIASES = {
 }
 
 
+def normalize_inference_device(device_value: str) -> str:
+    """Normalize CLI device value used for model.predict device routing."""
+    normalized = (device_value or "").strip()
+    if not normalized:
+        return "auto"
+    lowered = normalized.lower()
+    return "auto" if lowered == "auto" else normalized
+
+
+def resolve_predict_device_arg(device_value: str):
+    """Return device argument for Ultralytics predict call, using auto-routing when requested."""
+    return None if device_value == "auto" else device_value
+
+
+def print_inference_runtime_info(args: argparse.Namespace, model: YOLO) -> None:
+    """Print selected and effective inference device/backend hints for diagnostics."""
+    print(f"inference_device_requested={args.device}")
+    predictor = getattr(model, "predictor", None)
+    if predictor is not None:
+        effective_device = getattr(predictor, "device", None)
+        if effective_device is not None:
+            print(f"inference_device_effective={effective_device}")
+
+
 def resolve_model_path(model_value: str) -> str:
     """Resolve a configured model alias to a weights file path."""
     normalized = model_value.strip()
@@ -460,8 +484,10 @@ def detect_image(args: argparse.Namespace) -> None:
         source=args.source,
         conf=args.conf,
         imgsz=args.imgsz,
+        device=resolve_predict_device_arg(args.device),
         verbose=False,
     )[0]
+    print_inference_runtime_info(args, model)
     found, top_conf = frame_has_cat(result, cat_ids)
 
     print(f"cat_found={found}")
@@ -608,6 +634,7 @@ def detect_video(args: argparse.Namespace) -> None:
     detection_smoothing_iou_threshold = 0.3
     beep_lock = threading.Lock()
     beep_active = False
+    runtime_info_printed = False
 
     def trigger_beep_if_needed(found: bool) -> None:
         nonlocal last_beep_ts, beep_active
@@ -739,9 +766,13 @@ def detect_video(args: argparse.Namespace) -> None:
                     source=frame,
                     conf=args.conf,
                     imgsz=args.imgsz,
+                    device=resolve_predict_device_arg(args.device),
                     classes=sorted(trigger_ids),
                     verbose=False,
                 )[0]
+                if not runtime_info_printed:
+                    print_inference_runtime_info(args, model)
+                    runtime_info_printed = True
                 last_inference_ts = time.monotonic()
                 log_timing("inference", inference_started_at)
             except Exception as exc:
@@ -931,14 +962,19 @@ def detect_batch(args: argparse.Namespace) -> None:
 
     cat_images = 0
     no_cat_images = 0
+    runtime_info_printed = False
 
     for image_path in image_paths:
         result = model.predict(
             source=image_path,
             conf=args.conf,
             imgsz=args.imgsz,
+            device=resolve_predict_device_arg(args.device),
             verbose=False,
         )[0]
+        if not runtime_info_printed:
+            print_inference_runtime_info(args, model)
+            runtime_info_printed = True
         found, top_conf = frame_has_cat(result, cat_ids)
 
         if found:
@@ -964,6 +1000,7 @@ def detect_batch(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     default_model_value = os.getenv("CAT_DETECTOR_MODEL", "yolo26n")
+    default_device_value = os.getenv("CAT_DETECTOR_DEVICE", "auto")
     parser = argparse.ArgumentParser(
         description="Detect whether a cat exists in an image or video stream using YOLO26 weights."
     )
@@ -986,6 +1023,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=640,
         help="Inference image size in pixels; higher can help small-object detection but is slower (default: 640)",
+    )
+    parser.add_argument(
+        "--device",
+        default=default_device_value,
+        help=(
+            "Inference device passed to Ultralytics (examples: auto, cpu, 0, cuda:0, GPU). "
+            "Default from CAT_DETECTOR_DEVICE or auto."
+        ),
     )
 
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -1177,6 +1222,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     args.model = resolve_model_path(args.model)
+    args.device = normalize_inference_device(args.device)
 
     if args.mode == "image":
         detect_image(args)

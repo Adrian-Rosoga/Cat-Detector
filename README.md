@@ -33,6 +33,18 @@ telegram-send.conf.EXAMPLE  ->  telegram-send.conf
 pip install -r requirements.txt
 ```
 
+## Windows Prerequisite
+
+If you are running this project on Windows and `detect_cat.bat` fails during `import torch` with an error mentioning `c10.dll` or DLL initialization, install or update the Microsoft Visual C++ 2015+ Redistributable (x64).
+
+This project was validated on Python 3.14 after upgrading the x64 runtime package to the current release.
+
+Using `winget`:
+
+```powershell
+winget install --id Microsoft.VCRedist.2015+.x64 --exact --accept-package-agreements --accept-source-agreements
+```
+
 ## Windows Quick Start (.bat)
 
 Use the launcher file to run the utility on Windows:
@@ -108,7 +120,7 @@ PowerShell example:
 $env:CAT_DETECTOR_MODEL = "yolo26s"
 ```
 
-## 3) Run on an Image
+## Run on an Image
 
 ```bash
 python cat_detector.py --model yolo26n image --source path/to/photo.jpg --save out.jpg
@@ -122,7 +134,7 @@ top_cat_confidence=0.9123
 saved_annotated_image=out.jpg
 ```
 
-## 4) Run on Video / Stream
+## Run on Video / Stream
 
 Video file:
 
@@ -216,7 +228,7 @@ At the end of streaming, the tool prints:
 cat_seen_in_stream=True
 ```
 
-## 5) Run on a Folder (Batch)
+## Run on a Folder (Batch)
 
 ```bash
 python cat_detector.py --model yolo26n --conf 0.10 batch --source "Cat Photo Samples" --output-dir test_outputs_conf010
@@ -233,7 +245,7 @@ batch_no_cat_images=1
 saved_annotated_batch_dir=test_outputs_conf010
 ```
 
-## 6) Recent Validation and Hardening
+## Recent Validation and Hardening
 
 Latest updates verified in this workspace:
 - Model selection is configurable via `--model` aliases (`yolo26n`, `yolo26s`) and optional `CAT_DETECTOR_MODEL` environment variable.
@@ -246,3 +258,33 @@ Recommended quick validation command:
 ```bat
 detect_cat.bat --model yolo26s video --tapo-ip 192.168.1.111 --tapo-username YOUR_USER --tapo-password YOUR_PASSWORD --tapo-profile main --capture-buffer-size 1 --frame-skip 1 --display --max-frames 300 --beep-cooldown 1.5
 ```
+
+## Device Selection and Intel GPU Acceleration
+
+The detector now supports an explicit `--device` option for Ultralytics inference routing.
+
+Examples:
+
+```bash
+python cat_detector.py --model yolo26s --device auto video --source 0 --display
+python cat_detector.py --model yolo26s --device cpu video --source 0 --display
+python cat_detector.py --model yolo26s_openvino_model --device GPU video --source 0 --display
+```
+
+Notes:
+- `--device auto` is the default
+- you can also set `CAT_DETECTOR_DEVICE` in your environment or `config.env`
+- the program now prints `inference_device_requested=...`
+- when available, it also prints `inference_device_effective=...`
+
+For Intel Iris Xe, CUDA and ROCm are not applicable. The practical acceleration path is OpenVINO.
+
+Typical OpenVINO workflow:
+
+```powershell
+pip install --upgrade openvino ultralytics
+yolo export model=yolo26s.pt format=openvino imgsz=640
+python cat_detector.py --model yolo26s_openvino_model --device GPU video --tapo-ip 192.168.1.111 --tapo-username YOUR_USER --tapo-password YOUR_PASSWORD --tapo-profile main --display
+```
+
+If Intel GPU execution is unavailable or unstable on your system, retry with the exported OpenVINO model and `--device CPU`.
