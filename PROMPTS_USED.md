@@ -58,3 +58,12 @@ Ordered list of user prompts used during development.
 52. Add the 2 new files to git. Also, the snapshots dir in gitignored, however it still shows up in github. Fix that. Update prompts, activity and readme files, commit everything and sync.
 53. Make the text in the popup window just smaller enough to fit the current window size.
 54. Update activity, prompts and readme. Commit and sync.
+## Session: OpenVINO Optimization and M900-CFR Benchmarking
+
+55. Get the changes from github.
+56. Overwrite the local change.
+57. Install openVINO and benchmark to see if inference running on GPU is better than the current one on CPU.
+58. Do it.
+59. Don't change config.env, but create a copy of detect_cat.bat, name it detect_cat_m900_cfr.bat and add to it the 2 recommended settings.
+60. Append to the end of the files README.md and ACTIVITY_SUMMARY.md what has been done, adding the important detail that the optimization has been performed for the M900-CFR computer. Add the details of the machine CPU and GPU.
+61. Append the necessary info, i.e. prompts used to PROMPTS_USED.md. Add info from other sessions as well if possible to bring the file as up to date as possible.

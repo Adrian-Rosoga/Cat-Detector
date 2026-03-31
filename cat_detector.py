@@ -1010,8 +1010,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--model",
         default=default_model_value,
         help=(
-            "Model alias or path to weights. Supported aliases: yolo26n, yolo26s "
-            "(default from CAT_DETECTOR_MODEL or yolo26n)."
+            "Model alias or path to weights. Supported aliases: yolo26n, yolo26s, yolo26n_ov, yolo26s_ov "
+            "(default from CAT_DETECTOR_MODEL or yolo26n). Use _ov variants for OpenVINO optimization."
         ),
     )
     parser.add_argument(
