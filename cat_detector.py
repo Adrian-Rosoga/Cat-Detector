@@ -1,5 +1,6 @@
 import argparse
 import ctypes
+import math
 import os
 import threading
 from queue import Queue
@@ -169,10 +170,7 @@ def draw_recording_indicator(frame, is_recording: bool) -> None:
     """Draw 'REC' indicator at bottom left when recording is active."""
     if not is_recording:
         return
-    # Blink at 2 Hz (about 250 ms on / 250 ms off) so active recording is obvious.
-    if int(time.monotonic() * 4) % 2 == 0:
-        return
-    
+
     rec_text = "REC"
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = 2.0
@@ -183,24 +181,30 @@ def draw_recording_indicator(frame, is_recording: bool) -> None:
     text_width, text_height = text_size
     x = margin_x
     y = frame.shape[0] - margin_y
-    
-    # Draw red rectangle background
-    cv2.rectangle(
-        frame,
-        (x - 8, y - text_height - baseline - 8),
-        (x + text_width + 8, y + baseline + 8),
-        (0, 0, 255),
-        thickness=-1,
-    )
-    
-    # Draw white "REC" text
+
+    # Smooth pulse (sine wave) avoids harsh frame-by-frame flicker.
+    pulse_hz = 1.2
+    phase = time.monotonic() * 2.0 * math.pi * pulse_hz
+    pulse = 0.5 + 0.5 * (1.0 + math.sin(phase)) * 0.5
+    alpha = 0.35 + 0.55 * pulse
+
+    x1 = x - 8
+    y1 = y - text_height - baseline - 8
+    x2 = x + text_width + 8
+    y2 = y + baseline + 8
+
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 255), thickness=-1)
+    cv2.addWeighted(overlay, alpha, frame, 1.0 - alpha, 0.0, frame)
+
+    text_intensity = int(180 + 75 * pulse)
     cv2.putText(
         frame,
         rec_text,
         (x, y),
         font,
         scale,
-        (255, 255, 255),
+        (text_intensity, text_intensity, text_intensity),
         thickness,
         lineType=cv2.LINE_AA,
     )
@@ -238,6 +242,50 @@ def fit_frame_to_screen(frame, max_width: int, max_height: int):
     new_width = max(1, int(width * scale))
     new_height = max(1, int(height * scale))
     return cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+
+def create_video_writer_with_fallback(
+    output_path: str,
+    fps: float,
+    frame_size: tuple[int, int],
+    codec_candidates: tuple[str, ...] = ("avc1", "H264", "X264", "mp4v"),
+):
+    """Create a VideoWriter by trying preferred codecs in order."""
+    width, height = frame_size
+    if width <= 0 or height <= 0:
+        return None, None, None
+
+    safe_fps = fps if fps and fps > 0 else 30.0
+
+    attempts: list[tuple[int | None, str, str]] = []
+    if os.name == "nt":
+        msmf_backend = getattr(cv2, "CAP_MSMF", None)
+        if msmf_backend is not None:
+            for codec in codec_candidates:
+                attempts.append((msmf_backend, "CAP_MSMF", codec))
+
+    for codec in codec_candidates:
+        attempts.append((None, "default", codec))
+
+    seen_attempts: set[tuple[int | None, str]] = set()
+    for api_pref, backend_name, codec in attempts:
+        key = (api_pref, codec)
+        if key in seen_attempts:
+            continue
+        seen_attempts.add(key)
+        try:
+            fourcc = cv2.VideoWriter_fourcc(*codec)
+            if api_pref is None:
+                writer = cv2.VideoWriter(output_path, fourcc, safe_fps, (width, height))
+            else:
+                writer = cv2.VideoWriter(output_path, api_pref, fourcc, safe_fps, (width, height))
+            if writer.isOpened():
+                return writer, codec, backend_name
+            writer.release()
+        except cv2.error:
+            continue
+
+    return None, None, None
 
 
 def get_snapshot_trigger_class_ids(
@@ -575,14 +623,13 @@ def detect_video(args: argparse.Namespace) -> None:
     reconnect_sleep_s = 1.0
 
     writer = None
+    writer_codec: str | None = None
+    writer_init_failed = False
+    output_fps = cap.get(cv2.CAP_PROP_FPS)
+    if output_fps <= 0:
+        output_fps = 30.0
     if args.output:
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0:
-            fps = 30.0
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(args.output, fourcc, fps, (width, height))
+        print("video_writer_info=will initialize output writer on first processed frame")
 
     interactive_recording_writer = None
     interactive_recording_path: str | None = None
@@ -590,10 +637,11 @@ def detect_video(args: argparse.Namespace) -> None:
     interactive_recording_fps = cap.get(cv2.CAP_PROP_FPS)
     if interactive_recording_fps <= 0:
         interactive_recording_fps = 30.0
-    interactive_recording_fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    interactive_recording_codec: str | None = None
+    interactive_preferred_codec: str | None = None
 
     def stop_interactive_recording() -> None:
-        nonlocal interactive_recording_writer, interactive_recording_path, interactive_recording_size
+        nonlocal interactive_recording_writer, interactive_recording_path, interactive_recording_size, interactive_recording_codec
         if interactive_recording_writer is None:
             return
         interactive_recording_writer.release()
@@ -601,9 +649,11 @@ def detect_video(args: argparse.Namespace) -> None:
         interactive_recording_writer = None
         interactive_recording_path = None
         interactive_recording_size = None
+        interactive_recording_codec = None
 
     def start_interactive_recording(frame_to_record) -> None:
         nonlocal interactive_recording_writer, interactive_recording_path, interactive_recording_size
+        nonlocal interactive_recording_codec, interactive_preferred_codec
         if interactive_recording_writer is not None:
             print(f"interactive_recording_already_running={interactive_recording_path}")
             return
@@ -613,20 +663,33 @@ def detect_video(args: argparse.Namespace) -> None:
         os.makedirs(recordings_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_path = os.path.join(recordings_dir, f"recording_{timestamp}.mp4")
-        candidate_writer = cv2.VideoWriter(
+        codec_candidates = ("avc1", "H264", "X264", "mp4v")
+        if interactive_preferred_codec:
+            codec_candidates = (interactive_preferred_codec,)
+        candidate_writer, selected_codec, selected_backend = create_video_writer_with_fallback(
             output_path,
-            interactive_recording_fourcc,
             interactive_recording_fps,
             (width, height),
+            codec_candidates=codec_candidates,
         )
-        if not candidate_writer.isOpened():
+        if candidate_writer is None and interactive_preferred_codec:
+            candidate_writer, selected_codec, selected_backend = create_video_writer_with_fallback(
+                output_path,
+                interactive_recording_fps,
+                (width, height),
+            )
+        if candidate_writer is None:
             print(f"interactive_recording_warning=failed to open writer for {output_path}")
             return
 
         interactive_recording_writer = candidate_writer
+        interactive_recording_codec = selected_codec
+        interactive_preferred_codec = selected_codec
         interactive_recording_path = output_path
         interactive_recording_size = (width, height)
         print(f"interactive_recording_started={output_path}")
+        print(f"interactive_recording_codec={interactive_recording_codec}")
+        print(f"interactive_recording_backend={selected_backend}")
 
     def write_interactive_recording_frame(frame_to_record) -> None:
         if interactive_recording_writer is None:
@@ -982,6 +1045,36 @@ def detect_video(args: argparse.Namespace) -> None:
                     log_timing("video_write", write_started_at)
                 except cv2.error as exc:
                     print(f"video_write_warning={exc}")
+                    writer.release()
+                    writer = None
+                    writer_init_failed = True
+                    print("video_writer_warning=writer disabled after write failure")
+            elif args.output and not writer_init_failed:
+                frame_height, frame_width = annotated.shape[:2]
+                writer, writer_codec, writer_backend = create_video_writer_with_fallback(
+                    args.output,
+                    output_fps,
+                    (frame_width, frame_height),
+                )
+                if writer is None:
+                    writer_init_failed = True
+                    print(
+                        "video_writer_warning="
+                        f"failed to initialize output writer for {args.output}; output recording disabled"
+                    )
+                else:
+                    print(f"video_writer_codec={writer_codec}")
+                    print(f"video_writer_backend={writer_backend}")
+                    try:
+                        write_started_at = time.perf_counter()
+                        writer.write(annotated)
+                        log_timing("video_write", write_started_at)
+                    except cv2.error as exc:
+                        print(f"video_write_warning={exc}")
+                        writer.release()
+                        writer = None
+                        writer_init_failed = True
+                        print("video_writer_warning=writer disabled after write failure")
 
             processed_frames += 1
             if args.max_frames > 0 and processed_frames >= args.max_frames:

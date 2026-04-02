@@ -80,3 +80,11 @@ Ordered list of user prompts used during development.
 71. Don't change config.env, but create a copy of detect_cat.bat, name it detect_cat_m900_cfr.bat and add to it the 2 recommended settings.
 72. Append to the end of the files README.md and ACTIVITY_SUMMARY.md what has been done, adding the important detail that the optimization has been performed for the M900-CFR computer. Add the details of the machine CPU and GPU.
 73. Append the necessary info, i.e. prompts used to PROMPTS_USED.md. Add info from other sessions as well if possible to bring the file as up to date as possible.
+74. mp4 doesn't play. Why? Fix.
+75. The mp4 ercording do not play in the mpeg4 extension. Why?
+76. Do it.
+77. The REC visual cue doesn't blink smoothly. Fix.
+78. These errors appear in the log when recording. Why? Fix.
+79. Same error in the log: (.venv) PS C:\# PROJECTS #2\Cat Detector> ./detect_cat.bat ...
+80. The error went away but the last mp4 is no longer playable on the mpeg4 viewer. Fix that.
+81. Update ACTIVITY_SUMMARY, PROMPTS_USES by appending to the end of them.

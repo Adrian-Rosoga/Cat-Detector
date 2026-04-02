@@ -259,6 +259,40 @@ Documentation additions covered:
 - model configuration
 - config.env and secrets.env roles
 
+## 17. Recording Playback and UX Stabilization (Windows MP4)
+
+During the latest activity cycle, recording reliability and playback compatibility were improved after reports that some generated MP4 files did not play in the target MPEG4 viewer.
+
+Issues observed:
+- MP4 files sometimes opened in OpenCV but were not playable in the target viewer.
+- Recording logs showed OpenH264 library/version errors during codec probing.
+- Some recordings were produced with FMP4 tagging, which reduced compatibility.
+- REC indicator blink looked harsh and visually unstable.
+
+Root causes identified:
+- OpenCV FFmpeg path attempted H.264 via OpenH264 on this machine, but local DLL/version mismatch caused repeated initialization errors.
+- Codec/backend selection could fall back to less compatible outputs depending on runtime path.
+- Writer failures could produce repetitive per-frame warning noise.
+
+Fixes applied:
+- Added robust video-writer creation helper with codec fallback support.
+- Added lazy writer initialization for output recording using actual processed frame dimensions.
+- Added fail-fast behavior: disable writer after first write failure to prevent repeated warning spam.
+- Added interactive codec reuse to reduce repeated probe noise across start/stop cycles.
+- Updated backend selection to prefer Windows Media Foundation on Windows, which produced H.264-playable MP4 on this system.
+- Added runtime logging of selected codec and backend for both output and interactive recording.
+- Updated REC indicator from hard on/off blink to a smooth pulse animation for better UX.
+
+Validation performed:
+- Local recording files were inspected using OpenCV metadata reads.
+- Backend/codec matrix checks confirmed CAP_MSMF + avc1/h264 path is viable.
+- Post-fix test recording confirmed writer opened with H.264 decode signature and valid first-frame read.
+
+Current state:
+- Recording is stable.
+- REC cue animation is smooth.
+- Recent recordings are generated through a viewer-compatible path on this Windows setup.
+
 ## 17. Prompt History Maintenance
 
 PROMPTS_USED.md was originally updated incrementally and became incomplete.

@@ -318,6 +318,37 @@ A comprehensive OpenVINO inference optimization and benchmarking was performed o
 - **For sustained throughput streaming**, OpenVINO CPU is superior to GPU on this hardware (20.80 FPS vs 17.66 FPS in throughput mode).
 - Model export to OpenVINO IR format preserves detection accuracy while enabling hardware-specific optimizations.
 
+## Recording Compatibility Update (Windows)
+
+Recent updates improved manual recording compatibility for stricter MP4 viewers/extensions on Windows.
+
+### What Was Fixed
+
+- Recording writer selection now prefers the Windows Media Foundation backend first on Windows.
+- Codec fallback now prioritizes H.264-compatible output (`avc1`) before legacy fallbacks.
+- Output writer initialization uses the first processed frame dimensions to avoid size/header mismatches.
+- Repeated write failures now disable the writer after the first error to prevent warning spam.
+- Interactive recording remembers the last successful codec to reduce repeated probing noise.
+
+### Why This Matters
+
+Some viewers accepted older recordings while others rejected them when the file was written with less compatible stream tagging (for example `FMP4`). The updated backend/codec strategy produces more broadly compatible MP4 files on this machine.
+
+### Runtime Diagnostics
+
+When recording starts, the app now prints selected writer details. Look for:
+
+- `interactive_recording_codec=...`
+- `interactive_recording_backend=...`
+- `video_writer_codec=...`
+- `video_writer_backend=...`
+
+Expected healthy values on this Windows setup are typically H.264-compatible codec output with `CAP_MSMF` backend.
+
+### REC Indicator UX
+
+The `REC` cue animation was changed from hard on/off blinking to a smooth pulse for better visibility and reduced flicker.
+
 ### Recommended Configuration for M900-CFR
 
 Use the optimized launcher **`detect_cat_m900_cfr.bat`** which hardcodes the recommended settings:
