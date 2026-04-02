@@ -70,3 +70,13 @@ Ordered list of user prompts used during development.
 64. Make the REC visual cue blink to indicate recording.
 65. Move the helper and the REC cue on the bottom left a few mms up.
 66. Update ACTIVITY_SUMMARY, PROMPTS_USES by appending to the end of them.
+
+## Session: OpenVINO Optimization and M900-CFR Benchmarking
+
+67. Get the changes from github.
+68. Overwrite the local change.
+69. Install openVINO and benchmark to see if inference running on GPU is better than the current one on CPU.
+70. Do it.
+71. Don't change config.env, but create a copy of detect_cat.bat, name it detect_cat_m900_cfr.bat and add to it the 2 recommended settings.
+72. Append to the end of the files README.md and ACTIVITY_SUMMARY.md what has been done, adding the important detail that the optimization has been performed for the M900-CFR computer. Add the details of the machine CPU and GPU.
+73. Append the necessary info, i.e. prompts used to PROMPTS_USED.md. Add info from other sessions as well if possible to bring the file as up to date as possible.
