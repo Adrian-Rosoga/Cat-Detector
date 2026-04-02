@@ -58,3 +58,15 @@ Ordered list of user prompts used during development.
 52. Add the 2 new files to git. Also, the snapshots dir in gitignored, however it still shows up in github. Fix that. Update prompts, activity and readme files, commit everything and sync.
 53. Make the text in the popup window just smaller enough to fit the current window size.
 54. Update activity, prompts and readme. Commit and sync.
+55. Add functionality to record the video stream when pressing 'r' in the video capture window and stop the video recording when pressing 's'.
+56. Save the recordings in a directory named recordings within the current directory.
+57. Add functionality to save a snapshot of the video screen plus all the video screen captions and overlays when the user presses the p key. These should be saved in a directory named snapshots_manual.
+58. Add a visual cue to the bottom left of the video stream when recording is active.
+59. Instead of using s to control recording, make instead recording toggle when pressing r.
+60. Save snapshot when using s instead of p.
+61. When taking the snapshot alert about that with popup window that dissapears after a short interval.
+62. Move the recording cue a few mms up because it overlays with the existing help banner at the bottom left of the window.
+63. Use the hints of window control for the helper on the bottom left of the screen.
+64. Make the REC visual cue blink to indicate recording.
+65. Move the helper and the REC cue on the bottom left a few mms up.
+66. Update ACTIVITY_SUMMARY, PROMPTS_USES by appending to the end of them.

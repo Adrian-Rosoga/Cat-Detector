@@ -82,6 +82,8 @@ Load order is `config.env` first, then `secrets.env` (so secrets can override de
 ### Video Window Controls
 - `q` to end
 - `h` to show current active options (popup window with dynamically sized font that auto-fits to window)
+- `r` to toggle manual recording on/off (saved to `recordings/`)
+- `s` to save a manual snapshot (saved to `snapshots_manual/`)
 
 ## Changelog
 - Added options to disable dog and bear detection
@@ -90,6 +92,10 @@ Load order is `config.env` first, then `secrets.env` (so secrets can override de
 - Removed .vbs and extra .bat launcher
 - Press `h` in video window to see current options
 - Options popup now uses a dynamically sized font that auto-fits the text to the popup window, ensuring all options are visible and readable
+- Added interactive recording toggle in the live window (`r`)
+- Added blinking `REC` visual cue while recording is active
+- Added manual snapshot capture from live window (`s`) with overlay/captions included
+- Added short popup confirmation when manual snapshots are saved
 
 Supported built-in aliases:
 - `yolo26n` -> `yolo26n.pt`
@@ -173,7 +179,7 @@ Notes:
 - Intermittent stream decode/read errors are handled with automatic retry and reconnect attempts instead of immediate crash.
 - Snapshot saving and Telegram sending run on a background worker to reduce frame-loop stalls.
 
-When `--display` is enabled, press `q` to quit. The video overlay always shows a "Press q to end" watermark in the bottom left corner for clarity.
+When `--display` is enabled, use the bottom-left on-screen controls helper (`q`, `h`, `r`, `s`) for live interaction.
 By default, display mode auto-fits the full frame to your screen while preserving aspect ratio (no cropping).
 Use `--no-fit-display` if you want raw frame size instead.
 
@@ -181,6 +187,7 @@ Video overlay behavior:
 - Status banner is shown on the left side at mid-height.
 - Text is red on a pale-yellow background.
 - A short two-tone chime (~250 ms) is played when a cat is detected.
+- A blinking `REC` cue appears near the bottom-left when manual recording is active.
 
 Alert options:
 - `--beep-on-cat` / `--no-beep-on-cat` to enable or disable alert sound
@@ -209,6 +216,7 @@ Snapshot options (video mode):
 - `--snapshot-cooldown` sets minimum seconds between snapshots (default: 2.0; `detect_coco.bat` uses 30 s to avoid Telegram flooding)
 - `--snapshot-max-files` sets the maximum number of files to keep in the snapshot directory; the oldest files are deleted when the limit is exceeded (default from `SNAPSHOT_MAX_FILES` in `config.env`, or 1000; set to 0 to disable)
 - If `--telegram-send` is enabled, snapshots are sent only when a supported trigger detection is present.
+- Manual snapshots can be taken any time in display mode by pressing `s`; these are saved to `snapshots_manual/` and include current overlays/captions.
 
 Telegram snapshot delivery:
 - Enable with `--telegram-send`

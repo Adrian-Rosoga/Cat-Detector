@@ -469,3 +469,44 @@ Conclusion:
 - PyTorch CPU inference is already well-optimised on the Intel i7-1360P for this model size
 - OpenVINO CPU does not provide a speedup on this machine via the Ultralytics wrapper
 - The exported OpenVINO models are retained and usable via the new `--model yolo26s_ov` and `--model yolo26n_ov` aliases added to the code
+
+## 33. Interactive Recording and Manual Snapshot Controls
+
+Live window keyboard controls were expanded for manual capture workflows.
+
+Enhancements added:
+- press `r` to toggle recording on/off in the live video window
+- recording files are saved to a dedicated `recordings/` directory
+- press `s` to save a manual snapshot with current overlays/captions
+- manual snapshots are saved to `snapshots_manual/`
+
+Implementation details:
+- added an independent interactive `cv2.VideoWriter` separate from `--output`
+- recording output uses timestamped filenames
+- manual snapshots are timestamped to the millisecond
+- key handling was updated consistently across all display branches
+
+## 34. Visual Recording State and Helper Overlay Refinements
+
+The live display now provides clearer in-window feedback and cleaner overlay layout.
+
+Changes made:
+- added a bottom-left `REC` visual cue while interactive recording is active
+- made the `REC` cue blink to indicate active recording
+- moved helper banner and `REC` cue upward to avoid overlap
+- updated helper banner text to show current window controls
+
+Current helper controls shown on-screen:
+- q = quit
+- h = options popup
+- r = recording toggle
+- s = manual snapshot
+
+## 35. Manual Snapshot Popup Notification
+
+After taking a manual snapshot, the app now shows a short confirmation popup.
+
+Behavior:
+- displays "Snapshot saved!" in a small topmost popup window
+- popup closes automatically after a short interval
+- popup runs in a daemon thread to avoid blocking frame processing

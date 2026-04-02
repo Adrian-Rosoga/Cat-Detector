@@ -135,13 +135,13 @@ def draw_status_banner(frame, text: str) -> None:
     )
 
 def draw_watermark_q(frame):
-    """Draw 'Press q to end' watermark at bottom left."""
-    watermark = "Press: q to end; h for active options"
+    """Draw current window control hints at bottom left."""
+    watermark = "Controls: q quit | h options | r rec on/off | s snapshot"
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = 1.2
     thickness = 2
     margin_x = 14
-    margin_y = 14
+    margin_y = 34
     text_size, baseline = cv2.getTextSize(watermark, font, scale, thickness)
     text_width, text_height = text_size
     x = margin_x
@@ -160,6 +160,47 @@ def draw_watermark_q(frame):
         font,
         scale,
         (0, 0, 200),
+        thickness,
+        lineType=cv2.LINE_AA,
+    )
+
+
+def draw_recording_indicator(frame, is_recording: bool) -> None:
+    """Draw 'REC' indicator at bottom left when recording is active."""
+    if not is_recording:
+        return
+    # Blink at 2 Hz (about 250 ms on / 250 ms off) so active recording is obvious.
+    if int(time.monotonic() * 4) % 2 == 0:
+        return
+    
+    rec_text = "REC"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 2.0
+    thickness = 3
+    margin_x = 14
+    margin_y = 170
+    text_size, baseline = cv2.getTextSize(rec_text, font, scale, thickness)
+    text_width, text_height = text_size
+    x = margin_x
+    y = frame.shape[0] - margin_y
+    
+    # Draw red rectangle background
+    cv2.rectangle(
+        frame,
+        (x - 8, y - text_height - baseline - 8),
+        (x + text_width + 8, y + baseline + 8),
+        (0, 0, 255),
+        thickness=-1,
+    )
+    
+    # Draw white "REC" text
+    cv2.putText(
+        frame,
+        rec_text,
+        (x, y),
+        font,
+        scale,
+        (255, 255, 255),
         thickness,
         lineType=cv2.LINE_AA,
     )
@@ -543,6 +584,98 @@ def detect_video(args: argparse.Namespace) -> None:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(args.output, fourcc, fps, (width, height))
 
+    interactive_recording_writer = None
+    interactive_recording_path: str | None = None
+    interactive_recording_size: tuple[int, int] | None = None
+    interactive_recording_fps = cap.get(cv2.CAP_PROP_FPS)
+    if interactive_recording_fps <= 0:
+        interactive_recording_fps = 30.0
+    interactive_recording_fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+
+    def stop_interactive_recording() -> None:
+        nonlocal interactive_recording_writer, interactive_recording_path, interactive_recording_size
+        if interactive_recording_writer is None:
+            return
+        interactive_recording_writer.release()
+        print(f"interactive_recording_stopped={interactive_recording_path}")
+        interactive_recording_writer = None
+        interactive_recording_path = None
+        interactive_recording_size = None
+
+    def start_interactive_recording(frame_to_record) -> None:
+        nonlocal interactive_recording_writer, interactive_recording_path, interactive_recording_size
+        if interactive_recording_writer is not None:
+            print(f"interactive_recording_already_running={interactive_recording_path}")
+            return
+
+        height, width = frame_to_record.shape[:2]
+        recordings_dir = os.path.join(os.getcwd(), "recordings")
+        os.makedirs(recordings_dir, exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        output_path = os.path.join(recordings_dir, f"recording_{timestamp}.mp4")
+        candidate_writer = cv2.VideoWriter(
+            output_path,
+            interactive_recording_fourcc,
+            interactive_recording_fps,
+            (width, height),
+        )
+        if not candidate_writer.isOpened():
+            print(f"interactive_recording_warning=failed to open writer for {output_path}")
+            return
+
+        interactive_recording_writer = candidate_writer
+        interactive_recording_path = output_path
+        interactive_recording_size = (width, height)
+        print(f"interactive_recording_started={output_path}")
+
+    def write_interactive_recording_frame(frame_to_record) -> None:
+        if interactive_recording_writer is None:
+            return
+
+        current_size = (frame_to_record.shape[1], frame_to_record.shape[0])
+        if interactive_recording_size is not None and current_size != interactive_recording_size:
+            print(
+                "interactive_recording_warning="
+                f"frame size changed from {interactive_recording_size} to {current_size}; stopping recording"
+            )
+            stop_interactive_recording()
+            return
+
+        try:
+            interactive_recording_writer.write(frame_to_record)
+        except cv2.error as exc:
+            print(f"interactive_recording_warning={exc}")
+            stop_interactive_recording()
+
+    def save_manual_snapshot(frame_to_snapshot) -> None:
+        snapshots_manual_dir = os.path.join(os.getcwd(), "snapshots_manual")
+        os.makedirs(snapshots_manual_dir, exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        milliseconds = int((time.time() % 1) * 1000)
+        snapshot_filename = f"snapshot_{timestamp}_{milliseconds:03d}.jpg"
+        snapshot_path = os.path.join(snapshots_manual_dir, snapshot_filename)
+        try:
+            cv2.imwrite(snapshot_path, frame_to_snapshot)
+            print(f"manual_snapshot_saved={snapshot_path}")
+            
+            def show_snapshot_popup():
+                try:
+                    import tkinter as tk
+                    root = tk.Tk()
+                    root.title("Snapshot Saved")
+                    root.attributes("-topmost", True)
+                    root.geometry("300x100")
+                    label = tk.Label(root, text="Snapshot saved!", font=("Arial", 16), fg="green")
+                    label.pack(expand=True)
+                    root.after(1500, lambda: root.destroy())
+                    root.mainloop()
+                except Exception:
+                    pass
+            
+            threading.Thread(target=show_snapshot_popup, daemon=True).start()
+        except cv2.error as exc:
+            print(f"manual_snapshot_warning={exc}")
+
     window_name = "Cat Detector"
     screen_width, screen_height = get_screen_size()
     display_max_width = max(320, screen_width - 80)
@@ -555,6 +688,7 @@ def detect_video(args: argparse.Namespace) -> None:
             cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
         except Exception:
             pass
+        print("window_controls=q quit | h options | r toggle recording | s save snapshot")
 
     if args.snapshot_dir:
         os.makedirs(args.snapshot_dir, exist_ok=True)
@@ -719,6 +853,7 @@ def detect_video(args: argparse.Namespace) -> None:
                     if last_status_text is not None:
                         draw_status_banner(display_frame, last_status_text)
                     draw_watermark_q(display_frame)
+                    draw_recording_indicator(display_frame, interactive_recording_writer is not None)
                     frame_for_display = (
                         fit_frame_to_screen(display_frame, display_max_width, display_max_height)
                         if args.fit_display
@@ -729,9 +864,18 @@ def detect_video(args: argparse.Namespace) -> None:
                     except cv2.error as exc:
                         print(f"display_warning={exc}")
                         break
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord("q"):
                         stop_event.set()
                         break
+                    elif key == ord("r"):
+                        if interactive_recording_writer is not None:
+                            stop_interactive_recording()
+                        else:
+                            start_interactive_recording(display_frame)
+                    elif key == ord("s"):
+                        save_manual_snapshot(display_frame)
+                    write_interactive_recording_frame(display_frame)
                 continue
 
             now = time.monotonic()
@@ -747,6 +891,7 @@ def detect_video(args: argparse.Namespace) -> None:
                     if last_status_text is not None:
                         draw_status_banner(display_frame, last_status_text)
                     draw_watermark_q(display_frame)
+                    draw_recording_indicator(display_frame, interactive_recording_writer is not None)
                     frame_for_display = (
                         fit_frame_to_screen(display_frame, display_max_width, display_max_height)
                         if args.fit_display
@@ -757,9 +902,18 @@ def detect_video(args: argparse.Namespace) -> None:
                     except cv2.error as exc:
                         print(f"display_warning={exc}")
                         break
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord("q"):
                         stop_event.set()
                         break
+                    elif key == ord("r"):
+                        if interactive_recording_writer is not None:
+                            stop_interactive_recording()
+                        else:
+                            start_interactive_recording(display_frame)
+                    elif key == ord("s"):
+                        save_manual_snapshot(display_frame)
+                    write_interactive_recording_frame(display_frame)
                 continue
 
             try:
@@ -840,6 +994,7 @@ def detect_video(args: argparse.Namespace) -> None:
                 if last_status_text is not None:
                     draw_status_banner(display_frame, last_status_text)
                 draw_watermark_q(display_frame)
+                draw_recording_indicator(display_frame, interactive_recording_writer is not None)
                 if args.fit_display:
                     frame_for_display = fit_frame_to_screen(
                         display_frame, display_max_width, display_max_height
@@ -855,6 +1010,13 @@ def detect_video(args: argparse.Namespace) -> None:
                 if key == ord("q"):
                     stop_event.set()
                     break
+                elif key == ord("r"):
+                    if interactive_recording_writer is not None:
+                        stop_interactive_recording()
+                    else:
+                        start_interactive_recording(display_frame)
+                elif key == ord("s"):
+                    save_manual_snapshot(display_frame)
                 elif key == ord("h"):
                     # Show popup with current runtime options (custom tkinter, large font, always on top, threaded)
                     def show_options_popup(options_text):
@@ -906,11 +1068,14 @@ def detect_video(args: argparse.Namespace) -> None:
                         options.append(f"{k} = {v}")
                     options_text = "\n".join(options)
                     threading.Thread(target=show_options_popup, args=(options_text,), daemon=True).start()
+                write_interactive_recording_frame(display_frame)
     finally:
         stop_event.set()
         cap.release()
         if writer is not None:
             writer.release()
+        if interactive_recording_writer is not None:
+            interactive_recording_writer.release()
         if args.display:
             cv2.destroyAllWindows()
         if snapshot_queue is not None:

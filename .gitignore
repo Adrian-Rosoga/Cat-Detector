@@ -6,6 +6,8 @@ telegram-send.conf
 MY_README.txt
 MY_FILES/
 snapshots/
+recordings/
+snapshots_manual/
 *.pt
 
 test_outputs/
