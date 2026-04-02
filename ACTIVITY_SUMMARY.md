@@ -656,3 +656,210 @@ Behavior:
 - displays "Snapshot saved!" in a small topmost popup window
 - popup closes automatically after a short interval
 - popup runs in a daemon thread to avoid blocking frame processing
+
+## 37. Banner Font, Recording Audio, and Live Audio Playback
+
+This activity cycle focused on three related areas:
+- making the status banner typography consistent
+- adding audio to interactive MP4 recordings
+- adding live source-audio playback on the PC with runtime control
+
+### 37.1 Status Banner Typography
+
+Issue:
+- `CAT DETECTED` and `NO CAT YET` were rendered with different font faces/thickness values, so the detected-state banner looked noticeably weaker.
+
+Fix applied:
+- unified the banner renderer so both statuses use the same bold `FONT_HERSHEY_DUPLEX` styling and thickness.
+
+Result:
+- `CAT DETECTED` now matches the stronger visual weight previously used by `NO CAT YET`.
+
+### 37.2 Interactive Recording Audio: Attempts That Did Not Work
+
+Several recording-audio approaches were tried before converging on the working implementation.
+
+#### Attempt 1: Microphone capture
+
+What was tried:
+- added optional microphone capture using Python audio libraries and planned to mux mic audio into the recorded MP4.
+
+Why it was rejected:
+- the actual requirement was to capture the audio already present in the RTSP/video source stream, not a local microphone.
+
+Outcome:
+- removed as the wrong design for this camera setup.
+
+#### Attempt 2: Source-stream audio via ffmpeg, but relying on PATH
+
+What was tried:
+- started a sidecar ffmpeg process to capture source audio while OpenCV wrote the MP4 video.
+
+Problem observed:
+- audio capture failed immediately because `ffmpeg` was not in `PATH`.
+
+Fix applied:
+- added ffmpeg auto-discovery using:
+	- `FFMPEG_PATH`
+	- system `PATH`
+	- local `ffmpeg.exe`
+	- bundled `imageio-ffmpeg`
+
+Outcome:
+- ffmpeg became available reliably from the virtual environment.
+
+#### Attempt 3: RTSP native audio-copy path
+
+What was tried:
+- captured the RTSP audio stream directly using ffmpeg stream-copy into a Matroska sidecar, intending to preserve the original G.711 path more directly.
+
+Why it did not work well:
+- this path introduced a regression where the audio capture process exited immediately on the tested setup and was less reliable than the decoded PCM path.
+
+Outcome:
+- reverted.
+
+#### Attempt 4: Source audio capture with unsupported ffmpeg option
+
+What was tried:
+- added `-rw_timeout` for RTSP input handling.
+
+Problem observed:
+- the bundled ffmpeg binary did not support that option, causing the capture process to fail immediately.
+
+Validation finding:
+- direct probing showed the exact failure was `Option rw_timeout not found.`
+
+Fix applied:
+- removed `-rw_timeout` from the ffmpeg command.
+
+Outcome:
+- source-audio capture started working again.
+
+#### Attempt 5: Ungraceful audio-process shutdown
+
+What was tried:
+- recording audio capture was stopped with process termination.
+
+Problem observed:
+- the WAV sidecar was sometimes not finalized correctly, so no usable audio file existed at stop time.
+
+Fix applied:
+- changed shutdown to send `q` to ffmpeg via stdin first, then fall back to terminate/kill only if needed.
+
+Outcome:
+- sidecar WAV files finalized correctly and could be muxed.
+
+### 37.3 Interactive Recording Audio: What Worked
+
+Final working design:
+- while interactive recording is active, OpenCV writes the annotated MP4 video frames
+- a separate ffmpeg process captures source audio from the RTSP stream into a temporary WAV sidecar
+- on stop, the sidecar WAV is muxed back into the MP4 as AAC audio
+- the temporary WAV is deleted after a successful mux
+
+Enhancements added:
+- audio gain during mux so very quiet source audio becomes audible in the final MP4
+- configurable recording-audio gain via `--record-audio-gain-db`
+- clear log lines for recording start, audio start, mux success, stop, and warnings
+
+Validation performed:
+- ffmpeg metadata inspection confirmed generated MP4 files contain both:
+	- H.264 video
+	- AAC audio
+- volume analysis showed earlier captures were extremely quiet, which justified the mux gain stage
+- later recordings produced audible audio successfully in the final MP4
+
+Result:
+- interactive MP4 recordings now include working audio from the source stream.
+
+### 37.4 Live Source Audio on the PC: Attempts That Did Not Work
+
+#### Attempt 1: ffplay-only live playback
+
+What was tried:
+- use ffplay to play the source audio live on the PC while video continued to display in OpenCV.
+
+Problem observed:
+- the environment had ffmpeg but not ffplay.
+
+Outcome:
+- live audio could not work with an ffplay-only implementation.
+
+#### Attempt 2: First fallback object missing process interface
+
+What was tried:
+- introduced a Python fallback backend that pipes ffmpeg-decoded PCM into `sounddevice` for speaker playback.
+
+Problem observed:
+- the supervisor logic expected a subprocess-like object and called `.poll()`, but the fallback player object did not implement it.
+
+Fix applied:
+- added a subprocess-compatible `poll()` method.
+
+Outcome:
+- crash removed and the fallback backend could stay under the existing supervision logic.
+
+### 37.5 Live Source Audio on the PC: What Worked
+
+Final working design:
+- live source audio is enabled by default
+- pressing `a` toggles live audio on/off at runtime
+- `--play-audio` and `--no-play-audio` control startup behavior
+- if ffplay is unavailable, a fallback backend uses:
+	- ffmpeg to decode RTSP/source audio to PCM
+	- `sounddevice` to play that PCM on local speakers
+
+UI changes:
+- helper watermark now shows the audio toggle and current on/off state
+- startup controls text includes the `a` toggle
+
+Result:
+- live source audio on the PC works well on the current setup.
+
+### 37.6 Interaction Between Live Audio and Recording Audio
+
+New issue introduced:
+- once live audio worked, MP4 recording audio regressed because the live playback backend was already consuming the source audio stream.
+- a second separate recording-audio capture process then failed on this setup.
+
+Fix applied:
+- the live ffmpeg-pipe audio backend was extended to tee its already-decoded PCM stream into a WAV sidecar whenever interactive recording is active.
+- recording now reuses the live audio pipeline rather than competing with it.
+
+Result:
+- both features work at the same time:
+	- live source audio playback on the PC
+	- MP4 recordings with embedded audio
+
+### 37.7 Live Audio Volume Control
+
+Final enhancement in this cycle:
+- live audio was made louder by default and configurable.
+
+What was added:
+- live playback gain in dB is now applied to both live-audio backends
+- new CLI option: `--play-audio-gain-db`
+- new config/env-backed default: `CAT_DETECTOR_PLAY_AUDIO_GAIN_DB`
+- `config.env` now includes:
+	- `CAT_DETECTOR_PLAY_AUDIO_GAIN_DB=12.0`
+
+Result:
+- live audio volume can now be increased or decreased without code changes.
+
+### 37.8 Final State After This Activity Cycle
+
+Working now:
+- consistent bold status banner for both detection states
+- interactive MP4 recording with working embedded source audio
+- live source-audio playback on the PC
+- runtime live-audio toggle with `a`
+- configurable live-audio gain through CLI and `config.env`
+- configurable recording-audio gain during mux
+
+What did not survive to the final design:
+- microphone-based recording audio
+- ffplay-only live playback dependency
+- RTSP native audio-copy sidecar path
+- `-rw_timeout` ffmpeg option on this bundled ffmpeg build
+- separate competing audio-capture process when live playback is already active

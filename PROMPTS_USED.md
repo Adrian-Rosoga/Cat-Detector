@@ -88,3 +88,21 @@ Ordered list of user prompts used during development.
 79. Same error in the log: (.venv) PS C:\# PROJECTS #2\Cat Detector> ./detect_cat.bat ...
 80. The error went away but the last mp4 is no longer playable on the mpeg4 viewer. Fix that.
 81. Update ACTIVITY_SUMMARY, PROMPTS_USES by appending to the end of them.
+82. Use the same bolder font for the "CAT DETECTED" banner as for "NO CAT YET".
+83. Record also audio.
+84. Audio should already be in the video stream from the webcam. Don't think it exposes a microphone.
+85. Still no audio and getting this error in the log: (.venv) PS C:\# PROJECTS #2\Cat Detector> ./detect_cat.bat ... interactive_recording_audio_warning=ffmpeg not found in PATH; source audio capture disabled
+86. I don't see a .wav file, was one supposed to appear or is the audio embedded in the video stream?
+87. Still no audio as expected, fix. Here is the log: (.venv) PS C:\# PROJECTS #2\Cat Detector> ./detect_cat.bat ... interactive_recording_audio_saved=... interactive_recording_muxed=...
+88. This is what Gemini says about the webcam: RTSP (Real-Time Streaming Protocol): This is the most common way to get audio into a DIY "cat detector" setup. The audio is multiplexed (interleaved) directly into the video stream. URL Format: rtsp://[Your-Camera-IP]/stream1 Audio Path: In this stream, the video is H.264 and the audio is G.711. They arrive at your PC at the same time.
+89. Actually the sound worked before. Now no sound and the log says: (.venv) PS C:\# PROJECTS #2\Cat Detector> ./detect_cat.bat ... interactive_recording_audio_warning=source audio capture exited immediately (source may not expose an audio stream)
+90. No audio. It used to work at some moment in a previous iteration. Log is: (.venv) PS C:\# PROJECTS #2\Cat Detector> ./detect_cat.bat ... interactive_recording_audio_started=...wav ... interactive_recording_stopped=...mp4
+91. Still no audio. Log is: Starting the Cat Detector... ... interactive_recording_audio_warning=audio capture process exited with code 2880417800 ... audio sidecar was not created ...
+92. It works, can hear audio. Log is: (.venv) PS C:\# PROJECTS #2\Cat Detector> ./detect_cat.bat ... interactive_recording_audio_saved=...wav ... interactive_recording_audio_gain_db=24.0 ... interactive_recording_muxed=...mp4
+93. Do it.
+94. Add audio also to the video stream on the PC, not only in the recording. Add a toggle to be able to turn it on or off.
+95. Audio continues to work on recordings but I hear nothing in the live video stream on pc.
+96. Didn't work: (.venv) PS C:\# PROJECTS #2\Cat Detector> ./detect_cat.bat ... AttributeError: 'FFmpegPipeAudioPlayer' object has no attribute 'poll'
+97. Now the audio during the live stream works well, but there is no audio in the mp4 recording. That used to work. Log: Starting the Cat Detector... ... interactive_recording_audio_warning=audio capture process exited with code 4294967295 ... audio sidecar was not created ...
+98. Both audio in the live stream and in the mp4 work now. Just make the audio in the audio stream louder and provide a config to increase/decrease live audio.
+99. Append to the end of ACTIVITY_SUMMARY.md a detailed summary of all what was tried, what worked and what not. Then update the prompts used by appending to the end of PROMPTS_USED.md.

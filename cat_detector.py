@@ -2,12 +2,14 @@ import argparse
 import ctypes
 import math
 import os
+import shutil
 import threading
 from queue import Queue
 import subprocess
 import time
 from urllib.parse import quote
 from typing import Iterable, Set, Union
+import wave
 
 import cv2
 from ultralytics import YOLO
@@ -16,6 +18,16 @@ try:
     import winsound
 except ImportError:
     winsound = None
+
+try:
+    import imageio_ffmpeg  # type: ignore[import-not-found]
+except ImportError:
+    imageio_ffmpeg = None
+
+try:
+    import sounddevice as sd  # type: ignore[import-not-found]
+except ImportError:
+    sd = None
 
 
 MODEL_ALIASES = {
@@ -109,9 +121,9 @@ def resolve_video_source(args: argparse.Namespace) -> tuple[Union[int, str], str
 
 def draw_status_banner(frame, text: str) -> None:
     """Draw status text in the left-middle with red text on pale-yellow background."""
-    font = cv2.FONT_HERSHEY_SIMPLEX
+    font = cv2.FONT_HERSHEY_DUPLEX
     scale = 2.7
-    thickness = 2
+    thickness = 4
     margin_x = 12
     margin_y = 14
     text_size, baseline = cv2.getTextSize(text, font, scale, thickness)
@@ -135,9 +147,10 @@ def draw_status_banner(frame, text: str) -> None:
         cv2.LINE_AA,
     )
 
-def draw_watermark_q(frame):
+def draw_watermark_q(frame, live_audio_enabled: bool):
     """Draw current window control hints at bottom left."""
-    watermark = "Controls: q quit | h options | r rec on/off | s snapshot"
+    audio_state = "on" if live_audio_enabled else "off"
+    watermark = f"Controls: q quit | h options | r rec on/off | s snapshot | a audio {audio_state}"
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = 1.2
     thickness = 2
@@ -286,6 +299,387 @@ def create_video_writer_with_fallback(
             continue
 
     return None, None, None
+
+
+def resolve_ffmpeg_executable() -> str | None:
+    """Resolve an ffmpeg executable path without requiring PATH to be preconfigured."""
+    env_ffmpeg = os.getenv("FFMPEG_PATH", "").strip()
+    if env_ffmpeg and os.path.isfile(env_ffmpeg):
+        return env_ffmpeg
+
+    path_ffmpeg = shutil.which("ffmpeg")
+    if path_ffmpeg:
+        return path_ffmpeg
+
+    local_candidates = (
+        os.path.join(os.getcwd(), "ffmpeg.exe"),
+        os.path.join(os.getcwd(), "ffmpeg", "bin", "ffmpeg.exe"),
+    )
+    for candidate in local_candidates:
+        if os.path.isfile(candidate):
+            return candidate
+
+    if imageio_ffmpeg is not None:
+        try:
+            candidate = imageio_ffmpeg.get_ffmpeg_exe()
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        except Exception:
+            pass
+
+    return None
+
+
+def resolve_ffplay_executable(ffmpeg_executable: str | None) -> str | None:
+    """Resolve an ffplay executable path, preferring the same bundle as ffmpeg."""
+    env_ffplay = os.getenv("FFPLAY_PATH", "").strip()
+    if env_ffplay and os.path.isfile(env_ffplay):
+        return env_ffplay
+
+    path_ffplay = shutil.which("ffplay")
+    if path_ffplay:
+        return path_ffplay
+
+    if ffmpeg_executable:
+        ffmpeg_dir = os.path.dirname(ffmpeg_executable)
+        sidecar_ffplay = os.path.join(ffmpeg_dir, "ffplay.exe")
+        if os.path.isfile(sidecar_ffplay):
+            return sidecar_ffplay
+
+    local_candidates = (
+        os.path.join(os.getcwd(), "ffplay.exe"),
+        os.path.join(os.getcwd(), "ffmpeg", "bin", "ffplay.exe"),
+    )
+    for candidate in local_candidates:
+        if os.path.isfile(candidate):
+            return candidate
+
+    return None
+
+
+class FFmpegPipeAudioPlayer:
+    """Play live source audio by piping ffmpeg PCM output to local speakers."""
+
+    def __init__(self, source: str, ffmpeg_executable: str, gain_db: float) -> None:
+        self._source = source
+        self._ffmpeg_executable = ffmpeg_executable
+        self._gain_db = gain_db
+        self._process: subprocess.Popen | None = None
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._recording_wave: wave.Wave_write | None = None
+        self._recording_lock = threading.Lock()
+
+    def start(self) -> None:
+        cmd = [self._ffmpeg_executable, "-loglevel", "error"]
+        if self._source.lower().startswith("rtsp://"):
+            cmd.extend(["-rtsp_transport", "tcp"])
+        cmd.extend(
+            [
+                "-i",
+                self._source,
+                "-vn",
+                "-af",
+                f"volume={self._gain_db}dB",
+                "-acodec",
+                "pcm_s16le",
+                "-ar",
+                "44100",
+                "-ac",
+                "1",
+                "-f",
+                "s16le",
+                "-",
+            ]
+        )
+        self._process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=0,
+        )
+        self._thread = threading.Thread(target=self._audio_pump, daemon=True)
+        self._thread.start()
+
+    def _audio_pump(self) -> None:
+        if self._process is None or self._process.stdout is None:
+            return
+        try:
+            with sd.RawOutputStream(samplerate=44100, channels=1, dtype="int16", blocksize=2048) as stream:
+                while not self._stop_event.is_set():
+                    chunk = self._process.stdout.read(4096)
+                    if not chunk:
+                        break
+                    with self._recording_lock:
+                        if self._recording_wave is not None:
+                            self._recording_wave.writeframes(chunk)
+                    stream.write(chunk)
+        except Exception as exc:
+            print(f"live_audio_warning=ffmpeg pipe playback failed: {exc}")
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._process is not None and self._process.poll() is None:
+            try:
+                if self._process.stdin is not None:
+                    self._process.stdin.write(b"q\n")
+                    self._process.stdin.flush()
+            except Exception:
+                pass
+
+            try:
+                self._process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                self._process.terminate()
+                try:
+                    self._process.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    self._process.kill()
+                    self._process.wait(timeout=2.0)
+
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+
+        self.stop_recording()
+
+    def poll(self) -> int | None:
+        """Expose subprocess-like poll() for shared live-audio supervision logic."""
+        if self._process is None:
+            return 0
+        return self._process.poll()
+
+    def start_recording(self, output_path: str) -> None:
+        """Mirror the live PCM stream into a WAV sidecar for interactive recording."""
+        with self._recording_lock:
+            if self._recording_wave is not None:
+                self._recording_wave.close()
+            wave_file = wave.open(output_path, "wb")
+            wave_file.setnchannels(1)
+            wave_file.setsampwidth(2)
+            wave_file.setframerate(44100)
+            self._recording_wave = wave_file
+
+    def stop_recording(self) -> None:
+        """Stop mirroring live PCM stream into the WAV sidecar."""
+        with self._recording_lock:
+            if self._recording_wave is not None:
+                self._recording_wave.close()
+                self._recording_wave = None
+
+
+def start_live_audio_playback(
+    source: Union[int, str],
+    ffmpeg_executable: str | None,
+    ffplay_executable: str | None,
+    gain_db: float,
+) -> subprocess.Popen | FFmpegPipeAudioPlayer | None:
+    """Start live source-audio playback on PC speakers using ffplay."""
+    if not isinstance(source, str):
+        print(
+            "live_audio_warning="
+            "live source-audio playback requires URL/file source; numeric webcam index has no routed audio"
+        )
+        return None
+
+    if ffplay_executable:
+        def _spawn(cmd: list[str]) -> subprocess.Popen | None:
+            try:
+                return subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                return None
+
+        low_latency_cmd = [ffplay_executable, "-nodisp", "-loglevel", "error", "-fflags", "nobuffer"]
+        if source.lower().startswith("rtsp://"):
+            low_latency_cmd.extend(["-rtsp_transport", "tcp"])
+        low_latency_cmd.extend(["-i", source, "-vn", "-af", f"volume={gain_db}dB", "-volume", "100"])
+
+        basic_cmd = [ffplay_executable, "-nodisp", "-loglevel", "error"]
+        if source.lower().startswith("rtsp://"):
+            basic_cmd.extend(["-rtsp_transport", "tcp"])
+        basic_cmd.extend(["-i", source, "-vn", "-af", f"volume={gain_db}dB", "-volume", "100"])
+
+        for cmd in (low_latency_cmd, basic_cmd):
+            process = _spawn(cmd)
+            if process is None:
+                continue
+            time.sleep(0.35)
+            if process.poll() is None:
+                return process
+
+        print("live_audio_warning=ffplay exited immediately; trying ffmpeg pipe fallback")
+
+    if ffmpeg_executable and sd is not None:
+        try:
+            pipe_player = FFmpegPipeAudioPlayer(source, ffmpeg_executable, gain_db)
+            pipe_player.start()
+            return pipe_player
+        except Exception as exc:
+            print(f"live_audio_warning=ffmpeg pipe fallback failed: {exc}")
+            return None
+
+    if sd is None:
+        print("live_audio_warning=sounddevice not installed and ffplay unavailable; live audio disabled")
+    else:
+        print("live_audio_warning=ffmpeg/ffplay unavailable for live audio playback")
+    return None
+
+
+def stop_live_audio_playback(process: subprocess.Popen | FFmpegPipeAudioPlayer | None) -> None:
+    """Stop ffplay audio playback gracefully."""
+    if isinstance(process, FFmpegPipeAudioPlayer):
+        process.stop()
+        return
+
+    if process is None:
+        return
+    if process.poll() is not None:
+        return
+
+    try:
+        if process.stdin is not None:
+            process.stdin.write(b"q\n")
+            process.stdin.flush()
+    except Exception:
+        pass
+
+    try:
+        process.wait(timeout=2.0)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2.0)
+
+
+def start_source_audio_capture(
+    source: Union[int, str],
+    output_path: str,
+    ffmpeg_executable: str | None,
+) -> subprocess.Popen | None:
+    """Start capturing audio from the same source stream using ffmpeg."""
+    if not ffmpeg_executable:
+        print(
+            "interactive_recording_audio_warning="
+            "ffmpeg not found (checked PATH, FFMPEG_PATH, local ffmpeg.exe, imageio-ffmpeg); source audio capture disabled"
+        )
+        return None
+
+    if not isinstance(source, str):
+        print(
+            "interactive_recording_audio_warning="
+            "source audio capture requires URL/file source; numeric webcam index does not expose audio here"
+        )
+        return None
+
+    cmd = [ffmpeg_executable, "-y", "-loglevel", "error"]
+    if source.lower().startswith("rtsp://"):
+        cmd.extend(["-rtsp_transport", "tcp"])
+    cmd.extend(
+        [
+            "-i",
+            source,
+            "-vn",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "44100",
+            "-ac",
+            "1",
+            output_path,
+        ]
+    )
+
+    try:
+        return subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as exc:
+        print(f"interactive_recording_audio_warning=failed to start source audio capture: {exc}")
+        return None
+
+
+def stop_source_audio_capture(process: subprocess.Popen | None) -> None:
+    """Stop an ffmpeg audio capture process gracefully."""
+    if process is None:
+        return
+    if process.poll() is not None:
+        return
+
+    try:
+        if process.stdin is not None:
+            process.stdin.write(b"q\n")
+            process.stdin.flush()
+    except Exception:
+        pass
+
+    try:
+        process.wait(timeout=5.0)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2.0)
+
+
+def mux_video_with_audio(
+    video_path: str,
+    audio_path: str,
+    output_path: str,
+    ffmpeg_executable: str | None,
+    gain_db: float,
+) -> bool:
+    """Mux a silent MP4 and captured source audio into a final MP4 using ffmpeg."""
+    if not ffmpeg_executable:
+        print("interactive_recording_audio_warning=ffmpeg unavailable; keeping separate sidecar audio file")
+        return False
+
+    cmd = [
+        ffmpeg_executable,
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        video_path,
+        "-i",
+        audio_path,
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-af",
+        f"volume={gain_db}dB",
+        "-shortest",
+        output_path,
+    ]
+    try:
+        completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except Exception as exc:
+        print(f"interactive_recording_audio_warning=ffmpeg execution failed: {exc}")
+        return False
+
+    if completed.returncode != 0:
+        error_tail = (completed.stderr or "").strip().splitlines()[-1:] or ["unknown ffmpeg error"]
+        print(f"interactive_recording_audio_warning=ffmpeg mux failed: {error_tail[0]}")
+        return False
+
+    print(f"interactive_recording_audio_gain_db={gain_db}")
+
+    return True
 
 
 def get_snapshot_trigger_class_ids(
@@ -510,7 +904,7 @@ def send_snapshot_via_telegram(
         command.extend(["--config", args.telegram_config])
 
     if trigger_detected:
-        caption = f"Person/animal/bird detected at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        caption = f"Cat or something else detected at {time.strftime('%Y-%m-%d %H:%M:%S')}"
     else:
         caption = f"Stream snapshot at {time.strftime('%Y-%m-%d %H:%M:%S')}"
     command.extend(["-i", snapshot_path, "--caption", caption])
@@ -639,14 +1033,117 @@ def detect_video(args: argparse.Namespace) -> None:
         interactive_recording_fps = 30.0
     interactive_recording_codec: str | None = None
     interactive_preferred_codec: str | None = None
+    interactive_audio_process: subprocess.Popen | None = None
+    interactive_recording_audio_path: str | None = None
+    interactive_audio_uses_live_playback = False
+    ffmpeg_executable = resolve_ffmpeg_executable()
+    ffplay_executable = resolve_ffplay_executable(ffmpeg_executable)
+    live_audio_enabled = args.play_audio
+    live_audio_process: subprocess.Popen | FFmpegPipeAudioPlayer | None = None
+    live_audio_last_retry_ts = 0.0
+
+    def enable_live_audio() -> None:
+        nonlocal live_audio_process
+        if live_audio_process is not None and live_audio_process.poll() is None:
+            return
+        live_audio_process = start_live_audio_playback(
+            source,
+            ffmpeg_executable,
+            ffplay_executable,
+            args.play_audio_gain_db,
+        )
+        if live_audio_process is not None:
+            print("live_audio_started=True")
+
+    def disable_live_audio() -> None:
+        nonlocal live_audio_process
+        stop_live_audio_playback(live_audio_process)
+        if live_audio_process is not None:
+            print("live_audio_started=False")
+        live_audio_process = None
+
+    def toggle_live_audio() -> None:
+        nonlocal live_audio_enabled
+        live_audio_enabled = not live_audio_enabled
+        if live_audio_enabled:
+            enable_live_audio()
+        else:
+            disable_live_audio()
+
+    def ensure_live_audio_running() -> None:
+        nonlocal live_audio_last_retry_ts
+        if not live_audio_enabled:
+            return
+        if live_audio_process is not None and live_audio_process.poll() is None:
+            return
+        now = time.monotonic()
+        if now - live_audio_last_retry_ts < 2.0:
+            return
+        live_audio_last_retry_ts = now
+        enable_live_audio()
+
+    if live_audio_enabled:
+        enable_live_audio()
 
     def stop_interactive_recording() -> None:
         nonlocal interactive_recording_writer, interactive_recording_path, interactive_recording_size, interactive_recording_codec
+        nonlocal interactive_audio_process, interactive_recording_audio_path, interactive_audio_uses_live_playback
         if interactive_recording_writer is None:
             return
         interactive_recording_writer.release()
+
+        audio_recording_path = interactive_recording_audio_path
+        if interactive_audio_uses_live_playback:
+            if isinstance(live_audio_process, FFmpegPipeAudioPlayer):
+                try:
+                    live_audio_process.stop_recording()
+                except Exception as exc:
+                    print(f"interactive_recording_audio_warning=failed to stop live audio recording tap: {exc}")
+        else:
+            try:
+                stop_source_audio_capture(interactive_audio_process)
+            except Exception as exc:
+                print(f"interactive_recording_audio_warning=failed to stop source audio capture: {exc}")
+
+        if interactive_audio_process is not None and not interactive_audio_uses_live_playback:
+            return_code = interactive_audio_process.poll()
+            if return_code not in (None, 0):
+                print(f"interactive_recording_audio_warning=audio capture process exited with code {return_code}")
+
+        if audio_recording_path and not os.path.isfile(audio_recording_path):
+            print(
+                "interactive_recording_audio_warning="
+                f"audio sidecar was not created at {audio_recording_path}"
+            )
+
+        if (
+            interactive_recording_path
+            and audio_recording_path
+            and os.path.isfile(interactive_recording_path)
+            and os.path.isfile(audio_recording_path)
+        ):
+            merged_output_path = f"{interactive_recording_path}.mux.mp4"
+            if mux_video_with_audio(
+                interactive_recording_path,
+                audio_recording_path,
+                merged_output_path,
+                ffmpeg_executable,
+                args.record_audio_gain_db,
+            ):
+                try:
+                    os.replace(merged_output_path, interactive_recording_path)
+                    os.remove(audio_recording_path)
+                    print(f"interactive_recording_muxed={interactive_recording_path}")
+                except OSError as exc:
+                    print(f"interactive_recording_audio_warning=post-mux file operation failed: {exc}")
+                    if os.path.isfile(merged_output_path):
+                        os.remove(merged_output_path)
+
         print(f"interactive_recording_stopped={interactive_recording_path}")
         interactive_recording_writer = None
+        interactive_audio_process = None
+        interactive_recording_audio_path = None
+        interactive_audio_uses_live_playback = False
         interactive_recording_path = None
         interactive_recording_size = None
         interactive_recording_codec = None
@@ -654,6 +1151,7 @@ def detect_video(args: argparse.Namespace) -> None:
     def start_interactive_recording(frame_to_record) -> None:
         nonlocal interactive_recording_writer, interactive_recording_path, interactive_recording_size
         nonlocal interactive_recording_codec, interactive_preferred_codec
+        nonlocal interactive_audio_process, interactive_recording_audio_path, interactive_audio_uses_live_playback
         if interactive_recording_writer is not None:
             print(f"interactive_recording_already_running={interactive_recording_path}")
             return
@@ -663,6 +1161,7 @@ def detect_video(args: argparse.Namespace) -> None:
         os.makedirs(recordings_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_path = os.path.join(recordings_dir, f"recording_{timestamp}.mp4")
+        audio_output_path = os.path.join(recordings_dir, f"recording_{timestamp}.wav")
         codec_candidates = ("avc1", "H264", "X264", "mp4v")
         if interactive_preferred_codec:
             codec_candidates = (interactive_preferred_codec,)
@@ -688,8 +1187,33 @@ def detect_video(args: argparse.Namespace) -> None:
         interactive_recording_path = output_path
         interactive_recording_size = (width, height)
         print(f"interactive_recording_started={output_path}")
-        print(f"interactive_recording_codec={interactive_recording_codec}")
-        print(f"interactive_recording_backend={selected_backend}")
+
+        if args.record_audio:
+            try:
+                if isinstance(live_audio_process, FFmpegPipeAudioPlayer) and live_audio_process.poll() is None:
+                    live_audio_process.start_recording(audio_output_path)
+                    interactive_audio_process = None
+                    interactive_audio_uses_live_playback = True
+                    interactive_recording_audio_path = audio_output_path
+                    print(f"interactive_recording_audio_started={audio_output_path}")
+                else:
+                    audio_process = start_source_audio_capture(
+                        source,
+                        audio_output_path,
+                        ffmpeg_executable,
+                    )
+                    interactive_audio_process = audio_process
+                    interactive_audio_uses_live_playback = False
+                    if audio_process is not None:
+                        interactive_recording_audio_path = audio_output_path
+                        print(f"interactive_recording_audio_started={audio_output_path}")
+                    else:
+                        interactive_recording_audio_path = None
+            except Exception as exc:
+                interactive_audio_process = None
+                interactive_recording_audio_path = None
+                interactive_audio_uses_live_playback = False
+                print(f"interactive_recording_audio_warning=audio capture disabled: {exc}")
 
     def write_interactive_recording_frame(frame_to_record) -> None:
         if interactive_recording_writer is None:
@@ -751,7 +1275,7 @@ def detect_video(args: argparse.Namespace) -> None:
             cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
         except Exception:
             pass
-        print("window_controls=q quit | h options | r toggle recording | s save snapshot")
+        print("window_controls=q quit | h options | r toggle recording | s save snapshot | a toggle live audio")
 
     if args.snapshot_dir:
         os.makedirs(args.snapshot_dir, exist_ok=True)
@@ -865,6 +1389,8 @@ def detect_video(args: argparse.Namespace) -> None:
             if stop_event.is_set():
                 break
 
+            ensure_live_audio_running()
+
             try:
                 ok, frame = cap.read()
             except cv2.error as exc:
@@ -915,7 +1441,7 @@ def detect_video(args: argparse.Namespace) -> None:
                         draw_cached_detections(display_frame, last_plot_detections, model.names)
                     if last_status_text is not None:
                         draw_status_banner(display_frame, last_status_text)
-                    draw_watermark_q(display_frame)
+                    draw_watermark_q(display_frame, live_audio_enabled)
                     draw_recording_indicator(display_frame, interactive_recording_writer is not None)
                     frame_for_display = (
                         fit_frame_to_screen(display_frame, display_max_width, display_max_height)
@@ -938,6 +1464,8 @@ def detect_video(args: argparse.Namespace) -> None:
                             start_interactive_recording(display_frame)
                     elif key == ord("s"):
                         save_manual_snapshot(display_frame)
+                    elif key == ord("a"):
+                        toggle_live_audio()
                     write_interactive_recording_frame(display_frame)
                 continue
 
@@ -953,7 +1481,7 @@ def detect_video(args: argparse.Namespace) -> None:
                         draw_cached_detections(display_frame, last_plot_detections, model.names)
                     if last_status_text is not None:
                         draw_status_banner(display_frame, last_status_text)
-                    draw_watermark_q(display_frame)
+                    draw_watermark_q(display_frame, live_audio_enabled)
                     draw_recording_indicator(display_frame, interactive_recording_writer is not None)
                     frame_for_display = (
                         fit_frame_to_screen(display_frame, display_max_width, display_max_height)
@@ -976,6 +1504,8 @@ def detect_video(args: argparse.Namespace) -> None:
                             start_interactive_recording(display_frame)
                     elif key == ord("s"):
                         save_manual_snapshot(display_frame)
+                    elif key == ord("a"):
+                        toggle_live_audio()
                     write_interactive_recording_frame(display_frame)
                 continue
 
@@ -1017,8 +1547,7 @@ def detect_video(args: argparse.Namespace) -> None:
             trigger_beep_if_needed(found)
 
             annotated = result.plot()
-            label = "CAT DETECTED" if found else "NO CAT"
-            text = f"{label} | conf={top_conf:.2f}" if found else label
+            text = "CAT DETECTED!" if found else "NO CAT YET"
             last_status_text = text
 
             draw_status_banner(annotated, text)
@@ -1086,7 +1615,7 @@ def detect_video(args: argparse.Namespace) -> None:
                     draw_cached_detections(display_frame, last_plot_detections, model.names)
                 if last_status_text is not None:
                     draw_status_banner(display_frame, last_status_text)
-                draw_watermark_q(display_frame)
+                draw_watermark_q(display_frame, live_audio_enabled)
                 draw_recording_indicator(display_frame, interactive_recording_writer is not None)
                 if args.fit_display:
                     frame_for_display = fit_frame_to_screen(
@@ -1110,6 +1639,8 @@ def detect_video(args: argparse.Namespace) -> None:
                         start_interactive_recording(display_frame)
                 elif key == ord("s"):
                     save_manual_snapshot(display_frame)
+                elif key == ord("a"):
+                    toggle_live_audio()
                 elif key == ord("h"):
                     # Show popup with current runtime options (custom tkinter, large font, always on top, threaded)
                     def show_options_popup(options_text):
@@ -1168,7 +1699,8 @@ def detect_video(args: argparse.Namespace) -> None:
         if writer is not None:
             writer.release()
         if interactive_recording_writer is not None:
-            interactive_recording_writer.release()
+            stop_interactive_recording()
+        disable_live_audio()
         if args.display:
             cv2.destroyAllWindows()
         if snapshot_queue is not None:
@@ -1261,6 +1793,7 @@ def detect_batch(args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     default_model_value = os.getenv("CAT_DETECTOR_MODEL", "yolo26n")
     default_device_value = os.getenv("CAT_DETECTOR_DEVICE", "auto")
+    default_play_audio_gain_db = float(os.getenv("CAT_DETECTOR_PLAY_AUDIO_GAIN_DB", "12.0"))
     parser = argparse.ArgumentParser(
         description="Detect whether a cat exists in an image or video stream using YOLO26 weights."
     )
@@ -1353,6 +1886,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default="",
         help="Optional path to save annotated output video",
+    )
+    video_parser.add_argument(
+        "--record-audio",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable audio capture from the source stream for interactive recordings started with 'r' (default: enabled)",
+    )
+    video_parser.add_argument(
+        "--record-audio-gain-db",
+        type=float,
+        default=24.0,
+        help="Gain in dB applied to recorded source audio during mux (default: 24.0)",
+    )
+    video_parser.add_argument(
+        "--play-audio",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable live playback of source audio on the PC (default: enabled; toggle at runtime with 'a')",
+    )
+    video_parser.add_argument(
+        "--play-audio-gain-db",
+        type=float,
+        default=default_play_audio_gain_db,
+        help="Gain in dB applied to live source audio playback (default from CAT_DETECTOR_PLAY_AUDIO_GAIN_DB or 12.0)",
     )
     video_parser.add_argument(
         "--max-frames",

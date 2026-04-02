@@ -77,6 +77,10 @@ Load order is `config.env` first, then `secrets.env` (so secrets can override de
 - `--alert-person`, `--alert-bird`, `--alert-dog`, `--alert-bear` (enable/disable triggers)
 - `--beep-on-cat` (audio alert)
 - `--beep-cooldown` (min seconds between beeps)
+- `--record-audio` (enable audio in manual MP4 recordings)
+- `--record-audio-gain-db` (gain applied to recorded audio during mux)
+- `--play-audio` / `--no-play-audio` (live source-audio playback on the PC)
+- `--play-audio-gain-db` (gain applied to live source audio on the PC)
 - `--timing-log` (print timing diagnostics)
 
 ### Video Window Controls
@@ -84,6 +88,7 @@ Load order is `config.env` first, then `secrets.env` (so secrets can override de
 - `h` to show current active options (popup window with dynamically sized font that auto-fits to window)
 - `r` to toggle manual recording on/off (saved to `recordings/`)
 - `s` to save a manual snapshot (saved to `snapshots_manual/`)
+- `a` to toggle live source-audio playback on/off
 
 ## Changelog
 - Added options to disable dog and bear detection
@@ -96,6 +101,9 @@ Load order is `config.env` first, then `secrets.env` (so secrets can override de
 - Added blinking `REC` visual cue while recording is active
 - Added manual snapshot capture from live window (`s`) with overlay/captions included
 - Added short popup confirmation when manual snapshots are saved
+- Added audio to manual MP4 recordings using the source stream audio
+- Added live source-audio playback on the PC with runtime toggle (`a`)
+- Added configurable live-audio gain via `config.env` / CLI
 
 Supported built-in aliases:
 - `yolo26n` -> `yolo26n.pt`
@@ -118,6 +126,7 @@ Small/distant cat tuning:
 
 ```env
 CAT_DETECTOR_MODEL=yolo26s
+CAT_DETECTOR_PLAY_AUDIO_GAIN_DB=12.0
 ```
 
 PowerShell example:
@@ -183,11 +192,24 @@ When `--display` is enabled, use the bottom-left on-screen controls helper (`q`,
 By default, display mode auto-fits the full frame to your screen while preserving aspect ratio (no cropping).
 Use `--no-fit-display` if you want raw frame size instead.
 
+Live audio behavior:
+- Live source audio is enabled by default for RTSP/file sources and plays on the PC speakers.
+- Press `a` in the video window to toggle live audio on or off.
+- Use `--no-play-audio` to start with live audio disabled.
+- Use `--play-audio-gain-db` or `CAT_DETECTOR_PLAY_AUDIO_GAIN_DB` to make live playback louder or quieter.
+
 Video overlay behavior:
 - Status banner is shown on the left side at mid-height.
 - Text is red on a pale-yellow background.
+- `CAT DETECTED` and `NO CAT YET` use the same bold font style.
 - A short two-tone chime (~250 ms) is played when a cat is detected.
 - A blinking `REC` cue appears near the bottom-left when manual recording is active.
+
+Manual recording audio behavior:
+- Press `r` to start/stop manual recording to `recordings/`.
+- Manual MP4 recordings include audio from the source stream when available.
+- Recording audio is muxed into the final MP4 on stop.
+- Use `--record-audio-gain-db` to increase or decrease recorded audio loudness.
 
 Alert options:
 - `--beep-on-cat` / `--no-beep-on-cat` to enable or disable alert sound
@@ -336,14 +358,14 @@ Some viewers accepted older recordings while others rejected them when the file 
 
 ### Runtime Diagnostics
 
-When recording starts, the app now prints selected writer details. Look for:
+Current recording/audio log lines focus on key events. Useful entries include:
 
-- `interactive_recording_codec=...`
-- `interactive_recording_backend=...`
-- `video_writer_codec=...`
-- `video_writer_backend=...`
-
-Expected healthy values on this Windows setup are typically H.264-compatible codec output with `CAP_MSMF` backend.
+- `interactive_recording_started=...`
+- `interactive_recording_audio_started=...`
+- `interactive_recording_audio_gain_db=...`
+- `interactive_recording_muxed=...`
+- `interactive_recording_stopped=...`
+- `live_audio_started=True/False`
 
 ### REC Indicator UX
 
