@@ -863,3 +863,103 @@ What did not survive to the final design:
 - RTSP native audio-copy sidecar path
 - `-rw_timeout` ffmpeg option on this bundled ffmpeg build
 - separate competing audio-capture process when live playback is already active
+
+## 38. Image Mode: Cats-Only Detection Filter
+
+### Issue
+When running image detection mode, the annotated output included all 80 COCO classes (persons, motorcycles, birds, etc.), not just cats. This was inconsistent with the video mode, which already filtered inference to trigger classes only.
+
+### Root Cause
+The `detect_image()` function's `model.predict()` call did not pass a `classes=` filter, so all COCO classes were returned and drawn on the annotated image.
+
+### Fix Applied
+- Added `classes=sorted(cat_ids)` to the `model.predict()` call in `detect_image()`, matching the filtering approach already used in video mode.
+
+### Result
+- Image mode now only detects and annotates cats, consistent with the tool's purpose.
+
+## 39. Large Image Detection Failure (Istanbul Cats Test Case)
+
+### Issue
+An image with 10 visible cats (`Istanbul Cats - 2026-04-05 15.10.41.jpg`, 4000×2252 resolution) returned `cat_found=False` with `top_cat_confidence=0.0000` when using the default settings (`yolo26n`, `imgsz=640`).
+
+### Root Cause
+The default `imgsz=640` downscales a 4000×2252 image by ~6×, reducing cats to ~30–60 pixels in the inference frame — too small for reliable detection, especially with the nano model.
+
+### Diagnostic Results
+At `imgsz=640` with `conf=0.01`, the highest cat confidence was only 0.0326 (3.3%), far below the 0.25 threshold.
+
+At `imgsz=1280`:
+- `yolo26n` (nano): detected 3 cats above 0.25 threshold
+- `yolo26s` (small): detected **10 cats** above 0.25 threshold with high confidence (0.70–0.92)
+
+### Recommendation
+For high-resolution images with many small/medium subjects, use `--model yolo26s --imgsz 1280` or higher.
+
+## 40. Datetime Timestamps in Log Messages
+
+### Change
+All log messages now include a `[YYYY-MM-DD HH:MM:SS]` datetime timestamp prefix.
+
+### Implementation
+- Added `from datetime import datetime` import.
+- Modified the custom `print()` function to prepend a formatted timestamp to every log line.
+
+### Example Output
+```
+[2026-04-14 05:01:34] INFO: test_message=hello
+[2026-04-14 05:01:55] WARN: stream_reconnect_warning=...
+```
+
+## 41. RTSP Stream Connection Resilience Overhaul
+
+### Issue
+When WiFi was disabled to simulate a stream failure, the program silently hung and eventually stopped with only an h264 decode error — no reconnection was attempted.
+
+### Root Causes Identified
+
+**1. No RTSP-over-TCP transport:**
+OpenCV's `cv2.VideoCapture` defaults to UDP for RTSP, which is unreliable (packet loss, firewall/NAT issues). The ffmpeg audio components of the code already used `-rtsp_transport tcp`, but the main video capture did not.
+
+**2. Reconnection counter bug:**
+After a failed reconnect where `cap.isOpened()` returned `False`, the `consecutive_read_failures` counter was never reset. This meant the next single `cap.read()` failure immediately triggered another reconnect attempt (instead of getting a fresh 15-frame retry window). All 20 reconnect attempts burned through in ~20 seconds with no real recovery.
+
+**3. No backoff between reconnects:**
+The original code waited a flat 1 second between reconnect attempts. For network outages, this was too aggressive — the camera/network had no time to recover.
+
+**4. `cap.read()` hangs indefinitely on stream death:**
+When the RTSP stream dies mid-transfer, `cap.read()` calls into FFmpeg which blocks waiting for the next TCP packet — with no timeout. The h264 decode error was the last frame FFmpeg partially decoded before it stalled forever. The program never reached the reconnection logic because it was stuck inside `cap.read()`.
+
+### Fixes Applied
+
+**RTSP-over-TCP transport:**
+- Added `OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp|stimeout;10000000|timeout;10000000` for RTSP sources.
+- Video capture now uses `cv2.CAP_FFMPEG` backend explicitly for RTSP URLs.
+- The `stimeout` (10s socket timeout) and `timeout` (10s I/O timeout) tell FFmpeg to abort if no data arrives within 10 seconds.
+
+**Reconnection counter fix:**
+- `consecutive_read_failures` is now always reset after each reconnect attempt, giving each attempt a fair 15-frame retry window.
+- The max-attempts check is performed before releasing/reopening the capture, avoiding wasted reconnect work.
+
+**Exponential backoff:**
+- Replaced the flat 1-second delay with exponential backoff: 2s → 3s → 4.5s → ... up to 15s max.
+- This gives the camera and network more time to recover between attempts.
+
+**Threaded read with timeout:**
+- `cap.read()` now runs in a daemon thread with a 15-second join timeout.
+- If FFmpeg's own timeout doesn't trigger, the main loop detects the hang, logs `stream_read_warning=cap.read() timed out after 15s`, and proceeds to reconnection.
+
+**Broader exception handling:**
+- Changed `except cv2.error` to `except Exception` around the read operation, catching any unexpected error type from the FFmpeg backend.
+
+**Reconnection info message:**
+- Added `stream_reconnected=True` log message when a reconnect succeeds, providing clear visibility into recovery events.
+
+**Centralized capture creation:**
+- Extracted `_open_capture()` helper function used by both initial connection and reconnection, ensuring consistent RTSP options and buffer size configuration.
+
+### Result
+- The program no longer hangs silently when the stream drops.
+- Reconnection attempts are properly spaced and logged with timestamps.
+- Successful reconnections are confirmed with an info message.
+- The stream recovers automatically when the network is restored.

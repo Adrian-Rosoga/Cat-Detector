@@ -106,3 +106,13 @@ Ordered list of user prompts used during development.
 97. Now the audio during the live stream works well, but there is no audio in the mp4 recording. That used to work. Log: Starting the Cat Detector... ... interactive_recording_audio_warning=audio capture process exited with code 4294967295 ... audio sidecar was not created ...
 98. Both audio in the live stream and in the mp4 work now. Just make the audio in the audio stream louder and provide a config to increase/decrease live audio.
 99. Append to the end of ACTIVITY_SUMMARY.md a detailed summary of all what was tried, what worked and what not. Then update the prompts used by appending to the end of PROMPTS_USED.md.
+
+## Session: Image Detection Fixes, Logging, and Stream Resilience Overhaul
+
+100. Explain and fix why no cats detected in this image although there are 10 cats in the image (Istanbul Cats photo, 4000×2252, using yolo26n at imgsz=640 — all cats missed, top confidence 0.0000).
+101. What option should be used in order to only detect cats? (Image mode was showing persons, motorcycles, etc. in annotated output.)
+102. Check, explain and fix these stream connection failures (WiFi-disabled test — 20 reconnect attempts burned through instantly, then stream_ended).
+103. Add an info message when the stream reconnection happens.
+104. Add a datetime timestamp to the log messages.
+105. Check, explain and fix why when testing with wifi disabled to simulate stream failure the program stopped with h264 decode error and no reconnection (cap.read() hung indefinitely).
+106. Append at the end of ACTIVITY_SUMMARY.md and PROMPTS_USED.md a detailed explanation of the changes. Update then README.md.

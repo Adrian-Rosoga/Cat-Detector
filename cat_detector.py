@@ -1,8 +1,11 @@
 import argparse
+import builtins
 import ctypes
+from datetime import datetime
 import math
 import os
 import shutil
+import sys
 import threading
 from queue import Queue
 import subprocess
@@ -28,6 +31,67 @@ try:
     import sounddevice as sd  # type: ignore[import-not-found]
 except ImportError:
     sd = None
+
+
+_RAW_PRINT = builtins.print
+_LOG_COLORS = {
+    "INFO": "\033[96m",
+    "WARN": "\033[93m",
+    "ERROR": "\033[91m",
+}
+_LOG_RESET = "\033[0m"
+
+
+def _classify_log_level(message: str) -> str:
+    stripped = message.lstrip()
+    upper = stripped.upper()
+    if upper.startswith("ERROR:"):
+        return "ERROR"
+    if upper.startswith("WARN:"):
+        return "WARN"
+    if upper.startswith("INFO:"):
+        return "INFO"
+
+    lowered = stripped.lower()
+    if "_error=" in lowered or lowered.startswith("error"):
+        return "ERROR"
+    if "_warning=" in lowered or lowered.startswith("warning"):
+        return "WARN"
+    return "INFO"
+
+
+def print(*args, **kwargs):
+    """Print with INFO/WARN/ERROR prefix and ANSI colors for console visibility."""
+    if not args:
+        return _RAW_PRINT(*args, **kwargs)
+
+    sep = kwargs.get("sep", " ")
+    end = kwargs.get("end", "\n")
+    file = kwargs.get("file", sys.stdout)
+    flush = kwargs.get("flush", False)
+    message = sep.join(str(arg) for arg in args)
+
+    # Preserve bell behavior used by the short alert fallback.
+    if message == "\a" and end == "":
+        return _RAW_PRINT(message, end=end, file=file, flush=flush)
+
+    # Keep empty spacer lines unprefixed for readability.
+    if message.strip() == "":
+        return _RAW_PRINT(message, end=end, file=file, flush=flush)
+
+    level = _classify_log_level(message)
+    normalized = message
+    if not message.lstrip().upper().startswith(("INFO:", "WARN:", "ERROR:")):
+        normalized = f"{level}: {message}"
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    normalized = f"[{timestamp}] {normalized}"
+
+    color = _LOG_COLORS.get(level, "")
+    no_color = bool(os.getenv("NO_COLOR"))
+    supports_color = hasattr(file, "isatty") and file.isatty() and not no_color
+    output = f"{color}{normalized}{_LOG_RESET}" if supports_color else normalized
+    return _RAW_PRINT(output, end=end, file=file, flush=flush)
 
 
 MODEL_ALIASES = {
@@ -970,6 +1034,7 @@ def detect_image(args: argparse.Namespace) -> None:
         conf=args.conf,
         imgsz=args.imgsz,
         device=resolve_predict_device_arg(args.device),
+        classes=sorted(cat_ids),
         verbose=False,
     )[0]
     print_inference_runtime_info(args, model)
@@ -1005,16 +1070,30 @@ def detect_video(args: argparse.Namespace) -> None:
         )
 
     source, display_source = resolve_video_source(args)
-    cap = cv2.VideoCapture(source)
-    if args.capture_buffer_size > 0:
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, float(args.capture_buffer_size))
+
+    def _open_capture():
+        """Create a VideoCapture with RTSP-over-TCP when the source is an RTSP URL."""
+        if isinstance(source, str) and source.lower().startswith("rtsp://"):
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                "rtsp_transport;tcp|stimeout;10000000|timeout;10000000"
+            )
+            _cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+        else:
+            _cap = cv2.VideoCapture(source)
+        if args.capture_buffer_size > 0:
+            _cap.set(cv2.CAP_PROP_BUFFERSIZE, float(args.capture_buffer_size))
+        return _cap
+
+    cap = _open_capture()
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video source: {display_source}")
 
     max_consecutive_read_failures = 15
     max_reconnect_attempts = 20
     read_retry_sleep_s = 0.05
-    reconnect_sleep_s = 1.0
+    reconnect_base_sleep_s = 2.0
+    reconnect_max_sleep_s = 15.0
+    read_timeout_s = 15.0
 
     writer = None
     writer_codec: str | None = None
@@ -1042,7 +1121,7 @@ def detect_video(args: argparse.Namespace) -> None:
     live_audio_process: subprocess.Popen | FFmpegPipeAudioPlayer | None = None
     live_audio_last_retry_ts = 0.0
 
-    def enable_live_audio() -> None:
+    def enable_live_audio(log_state_change: bool = True) -> None:
         nonlocal live_audio_process
         if live_audio_process is not None and live_audio_process.poll() is None:
             return
@@ -1052,7 +1131,7 @@ def detect_video(args: argparse.Namespace) -> None:
             ffplay_executable,
             args.play_audio_gain_db,
         )
-        if live_audio_process is not None:
+        if live_audio_process is not None and log_state_change:
             print("live_audio_started=True")
 
     def disable_live_audio() -> None:
@@ -1066,7 +1145,7 @@ def detect_video(args: argparse.Namespace) -> None:
         nonlocal live_audio_enabled
         live_audio_enabled = not live_audio_enabled
         if live_audio_enabled:
-            enable_live_audio()
+            enable_live_audio(log_state_change=True)
         else:
             disable_live_audio()
 
@@ -1080,10 +1159,10 @@ def detect_video(args: argparse.Namespace) -> None:
         if now - live_audio_last_retry_ts < 2.0:
             return
         live_audio_last_retry_ts = now
-        enable_live_audio()
+        enable_live_audio(log_state_change=False)
 
     if live_audio_enabled:
-        enable_live_audio()
+        enable_live_audio(log_state_change=True)
 
     def stop_interactive_recording() -> None:
         nonlocal interactive_recording_writer, interactive_recording_path, interactive_recording_size, interactive_recording_codec
@@ -1392,8 +1471,23 @@ def detect_video(args: argparse.Namespace) -> None:
             ensure_live_audio_running()
 
             try:
-                ok, frame = cap.read()
-            except cv2.error as exc:
+                read_result: list = [False, None]
+
+                def _threaded_read():
+                    try:
+                        read_result[0], read_result[1] = cap.read()
+                    except Exception:
+                        read_result[0], read_result[1] = False, None
+
+                reader = threading.Thread(target=_threaded_read, daemon=True)
+                reader.start()
+                reader.join(timeout=read_timeout_s)
+                if reader.is_alive():
+                    print(f"stream_read_warning=cap.read() timed out after {read_timeout_s:.0f}s")
+                    ok, frame = False, None
+                else:
+                    ok, frame = read_result[0], read_result[1]
+            except Exception as exc:
                 ok, frame = False, None
                 print(f"stream_read_warning={exc}")
 
@@ -1404,19 +1498,16 @@ def detect_video(args: argparse.Namespace) -> None:
                     continue
 
                 reconnect_attempts += 1
+                sleep_s = min(
+                    reconnect_base_sleep_s * (1.5 ** (reconnect_attempts - 1)),
+                    reconnect_max_sleep_s,
+                )
                 print(
                     "stream_reconnect_warning="
-                    f"read failures reached {consecutive_read_failures}; reconnect attempt {reconnect_attempts}/{max_reconnect_attempts}"
+                    f"read failures reached {consecutive_read_failures}; "
+                    f"reconnect attempt {reconnect_attempts}/{max_reconnect_attempts} "
+                    f"(waiting {sleep_s:.1f}s)"
                 )
-
-                cap.release()
-                time.sleep(reconnect_sleep_s)
-                cap = cv2.VideoCapture(source)
-                if args.capture_buffer_size > 0:
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, float(args.capture_buffer_size))
-                if cap.isOpened():
-                    consecutive_read_failures = 0
-                    continue
 
                 if reconnect_attempts >= max_reconnect_attempts:
                     print(
@@ -1425,6 +1516,12 @@ def detect_video(args: argparse.Namespace) -> None:
                     )
                     break
 
+                cap.release()
+                time.sleep(sleep_s)
+                cap = _open_capture()
+                consecutive_read_failures = 0
+                if cap.isOpened():
+                    print("stream_reconnected=True")
                 continue
 
             consecutive_read_failures = 0

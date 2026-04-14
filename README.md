@@ -104,6 +104,13 @@ Load order is `config.env` first, then `secrets.env` (so secrets can override de
 - Added audio to manual MP4 recordings using the source stream audio
 - Added live source-audio playback on the PC with runtime toggle (`a`)
 - Added configurable live-audio gain via `config.env` / CLI
+- Image mode now filters to cats only (consistent with video mode class filtering)
+- All log messages now include `[YYYY-MM-DD HH:MM:SS]` datetime timestamps
+- RTSP streams now use TCP transport with socket/I/O timeouts for reliable connectivity
+- Stream reconnection uses exponential backoff (2s–15s) instead of flat 1s delay
+- `cap.read()` is wrapped in a 15-second threaded timeout to prevent indefinite hangs
+- Stream reconnection counter bug fixed — each attempt now gets a full retry window
+- Successful stream reconnections are logged with `stream_reconnected=True`
 
 Supported built-in aliases:
 - `yolo26n` -> `yolo26n.pt`
@@ -184,8 +191,10 @@ python cat_detector.py --model yolo26s video --tapo-ip 192.168.1.111 --tapo-user
 Notes:
 - `--tapo-profile main` maps to `stream1`
 - `--tapo-profile sub` maps to `stream2`
-- In video mode, provide either `--source` or `--tapo-ip`
-- Intermittent stream decode/read errors are handled with automatic retry and reconnect attempts instead of immediate crash.
+- In video mode, provide either `--source` or `--tapo-ip`- RTSP streams use TCP transport with 10-second socket/I/O timeouts for reliable connectivity.
+- Stream interruptions trigger automatic reconnection with exponential backoff (2s–15s), up to 20 attempts.
+- `cap.read()` is wrapped in a 15-second threaded timeout to prevent indefinite hangs on stream death.
+- Successful reconnections are logged with `stream_reconnected=True`.- Intermittent stream decode/read errors are handled with automatic retry and reconnect attempts instead of immediate crash.
 - Snapshot saving and Telegram sending run on a background worker to reduce frame-loop stalls.
 
 When `--display` is enabled, use the bottom-left on-screen controls helper (`q`, `h`, `r`, `s`) for live interaction.
