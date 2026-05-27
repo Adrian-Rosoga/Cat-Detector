@@ -34,6 +34,9 @@ except ImportError:
 
 
 _RAW_PRINT = builtins.print
+
+VERSION = "1.0"
+
 _LOG_COLORS = {
     "INFO": "\033[96m",
     "WARN": "\033[93m",
@@ -183,8 +186,12 @@ def resolve_video_source(args: argparse.Namespace) -> tuple[Union[int, str], str
     return source, str(args.source)
 
 
-def draw_status_banner(frame, text: str) -> None:
-    """Draw status text in the left-middle with red text on pale-yellow background."""
+def draw_status_banner(frame, text: str, cat_detected: bool = False) -> None:
+    """Draw status text in the left-middle with red text on pale-yellow background.
+
+    When cat_detected is True, a smooth sine-wave pulse is applied to the
+    background alpha and text brightness so the banner visually pulses.
+    """
     font = cv2.FONT_HERSHEY_DUPLEX
     scale = 2.7
     thickness = 4
@@ -199,14 +206,33 @@ def draw_status_banner(frame, text: str) -> None:
     y1 = margin_y
     y2 = y1 + text_height + baseline + 10
 
-    cv2.rectangle(frame, (x1, y1), (x2, y2), (200, 240, 255), thickness=-1)
+    if cat_detected:
+        # Smooth pulse (same sine-wave approach as the REC indicator)
+        pulse_hz = 1.2
+        phase = time.monotonic() * 2.0 * math.pi * pulse_hz
+        pulse = 0.5 + 0.5 * (1.0 + math.sin(phase)) * 0.5  # 0.0 – 1.0
+        bg_alpha = 0.45 + 0.55 * pulse  # fades between ~0.45 and 1.0
+        # Background pulses from orange-red to bright red
+        bg_r = int(0 + 0 * pulse)
+        bg_g = int(40 * (1.0 - pulse))
+        bg_b = int(200 + 55 * pulse)
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), (bg_r, bg_g, bg_b), thickness=-1)
+        cv2.addWeighted(overlay, bg_alpha, frame, 1.0 - bg_alpha, 0.0, frame)
+        # Text pulses from light-yellow to white
+        text_intensity = int(200 + 55 * pulse)
+        text_color = (text_intensity, text_intensity, 255)
+    else:
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (200, 240, 255), thickness=-1)
+        text_color = (0, 0, 255)
+
     cv2.putText(
         frame,
         text,
         (x1 + 8, y2 - 8),
         font,
         scale,
-        (0, 0, 255),
+        text_color,
         thickness,
         cv2.LINE_AA,
     )
@@ -234,6 +260,37 @@ def draw_watermark_q(frame, live_audio_enabled: bool):
     cv2.putText(
         frame,
         watermark,
+        (x, y),
+        font,
+        scale,
+        (0, 0, 200),
+        thickness,
+        lineType=cv2.LINE_AA,
+    )
+
+
+def draw_version_banner(frame) -> None:
+    """Draw program version at bottom right, styled like the controls watermark."""
+    text = f"Cat Detector {VERSION}"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 1.2
+    thickness = 2
+    margin_x = 14
+    margin_y = 34
+    text_size, baseline = cv2.getTextSize(text, font, scale, thickness)
+    text_width, text_height = text_size
+    x = frame.shape[1] - text_width - margin_x - 12
+    y = frame.shape[0] - margin_y
+    cv2.rectangle(
+        frame,
+        (x - 6, y - text_height - baseline - 6),
+        (x + text_width + 6, y + baseline + 6),
+        (200, 240, 255),
+        thickness=-1,
+    )
+    cv2.putText(
+        frame,
+        text,
         (x, y),
         font,
         scale,
@@ -295,6 +352,130 @@ def play_beep_beep_alert() -> None:
         winsound.Beep(1175, 120)
     else:
         print("\a", end="", flush=True)
+
+
+# Windows SetThreadExecutionState flags
+_ES_CONTINUOUS = 0x80000000
+_ES_SYSTEM_REQUIRED = 0x00000001
+_ES_DISPLAY_REQUIRED = 0x00000002
+
+
+def set_keep_awake(enabled: bool) -> None:
+    """Prevent or restore system sleep and screen-off via SetThreadExecutionState."""
+    try:
+        kernel32 = ctypes.windll.kernel32
+        if enabled:
+            kernel32.SetThreadExecutionState(
+                _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_DISPLAY_REQUIRED
+            )
+        else:
+            kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
+    except Exception:
+        pass
+
+
+_CAT_ICON_BYTES: bytes | None = None
+
+_CAT_ICON_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cat_icon.png")
+
+
+def _build_cat_icon_png_bytes() -> bytes:
+    """Draw a 64x64 happy cat face and return PNG bytes (fallback if cat_icon.png is missing)."""
+    import numpy as np
+    img = np.zeros((64, 64, 4), dtype=np.uint8)
+    ORANGE  = (30, 140, 255, 255)   # BGRA warm orange fur
+    PINK    = (160, 100, 240, 255)  # BGRA inner ear / nose
+    DARK    = (25,  25,  25, 255)   # BGRA outlines / features
+    WHISKER = (25,  25,  25, 180)   # BGRA semi-transparent whiskers
+    # Left ear
+    cv2.fillPoly(img, [np.array([[5, 24], [17, 4], [27, 22]], np.int32)], ORANGE)
+    cv2.fillPoly(img, [np.array([[10, 22], [17, 10], [23, 21]], np.int32)], PINK)
+    # Right ear
+    cv2.fillPoly(img, [np.array([[59, 24], [47, 4], [37, 22]], np.int32)], ORANGE)
+    cv2.fillPoly(img, [np.array([[54, 22], [47, 10], [41, 21]], np.int32)], PINK)
+    # Face circle
+    cv2.circle(img, (32, 37), 27, ORANGE, -1)
+    # Happy squint eyes (arcs opening downward)
+    cv2.ellipse(img, (22, 31), (7, 5), 0, 195, 345, DARK, 2)
+    cv2.ellipse(img, (42, 31), (7, 5), 0, 195, 345, DARK, 2)
+    # Nose
+    cv2.fillPoly(img, [np.array([[32, 40], [29, 44], [35, 44]], np.int32)], PINK)
+    # Smile
+    cv2.ellipse(img, (32, 44), (5, 3), 0, 5, 175, DARK, 1)
+    # Whiskers
+    cv2.line(img, (3, 37),  (25, 40), WHISKER, 1)
+    cv2.line(img, (3, 42),  (25, 42), WHISKER, 1)
+    cv2.line(img, (61, 37), (39, 40), WHISKER, 1)
+    cv2.line(img, (61, 42), (39, 42), WHISKER, 1)
+    ok, buf = cv2.imencode(".png", img)
+    return buf.tobytes() if ok else b""
+
+
+def _get_cat_icon_bytes() -> bytes:
+    global _CAT_ICON_BYTES
+    if _CAT_ICON_BYTES is None:
+        if os.path.isfile(_CAT_ICON_FILE):
+            try:
+                with open(_CAT_ICON_FILE, "rb") as f:
+                    _CAT_ICON_BYTES = f.read()
+            except OSError:
+                _CAT_ICON_BYTES = _build_cat_icon_png_bytes()
+        else:
+            _CAT_ICON_BYTES = _build_cat_icon_png_bytes()
+    return _CAT_ICON_BYTES
+
+
+def _apply_tk_icon(root) -> None:
+    """Set the happy cat icon on a tkinter Tk window."""
+    try:
+        import base64
+        import tkinter as tk
+        png_bytes = _get_cat_icon_bytes()
+        if not png_bytes:
+            return
+        img = tk.PhotoImage(data=base64.b64encode(png_bytes))
+        root.iconphoto(True, img)
+        root._cat_icon_ref = img  # prevent garbage collection
+    except Exception:
+        pass
+
+
+def _apply_cv2_window_icon(window_name: str) -> None:
+    """Set the happy cat icon on the OpenCV window (Windows only)."""
+    if os.name != "nt":
+        return
+    try:
+        import struct
+        import tempfile
+        png_bytes = _get_cat_icon_bytes()
+        if not png_bytes:
+            return
+        # Build a minimal ICO file embedding the PNG directly (Vista+)
+        img_offset = 6 + 16  # header(6) + one dir entry(16)
+        ico_data = (
+            struct.pack('<HHH', 0, 1, 1)  # reserved, type=icon, count=1
+            + struct.pack('<BBBBHHII', 64, 64, 0, 0, 1, 32, len(png_bytes), img_offset)
+            + png_bytes
+        )
+        with tempfile.NamedTemporaryFile(suffix='.ico', delete=False) as f:
+            tmp_ico = f.name
+            f.write(ico_data)
+        try:
+            hwnd = ctypes.windll.user32.FindWindowW(None, window_name)
+            if hwnd:
+                LR_LOADFROMFILE = 0x0010
+                hicon_big   = ctypes.windll.user32.LoadImageW(None, tmp_ico, 1, 64, 64, LR_LOADFROMFILE)
+                hicon_small = ctypes.windll.user32.LoadImageW(None, tmp_ico, 1, 16, 16, LR_LOADFROMFILE)
+                WM_SETICON = 0x0080
+                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, 1, hicon_big)
+                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, 0, hicon_small)
+        finally:
+            try:
+                os.unlink(tmp_ico)
+            except OSError:
+                pass
+    except Exception:
+        pass
 
 
 def get_screen_size() -> tuple[int, int]:
@@ -957,7 +1138,7 @@ def write_telegram_config(config_path: str, token: str, chat_id: str) -> None:
 
 
 def send_snapshot_via_telegram(
-    args: argparse.Namespace, snapshot_path: str, trigger_detected: bool
+    args: argparse.Namespace, snapshot_path: str, trigger_detected: bool, detected_names: list[str] = None
 ) -> None:
     """Send a snapshot image with telegram-send when enabled."""
     if not args.telegram_send:
@@ -967,8 +1148,12 @@ def send_snapshot_via_telegram(
     if args.telegram_config:
         command.extend(["--config", args.telegram_config])
 
-    if trigger_detected:
-        caption = f"Cat or something else detected at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    if trigger_detected and detected_names:
+        # Capitalize and add ! to each name, join with spaces
+        names_str = " ".join(f"{name.capitalize()}!" for name in detected_names)
+        caption = f"{names_str} {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    elif trigger_detected:
+        caption = f"Detection! {time.strftime('%Y-%m-%d %H:%M:%S')}"
     else:
         caption = f"Stream snapshot at {time.strftime('%Y-%m-%d %H:%M:%S')}"
     command.extend(["-i", snapshot_path, "--caption", caption])
@@ -1083,6 +1268,10 @@ def detect_video(args: argparse.Namespace) -> None:
         if args.capture_buffer_size > 0:
             _cap.set(cv2.CAP_PROP_BUFFERSIZE, float(args.capture_buffer_size))
         return _cap
+
+    if args.keep_awake:
+        set_keep_awake(True)
+        print("keep_awake=enabled")
 
     cap = _open_capture()
     if not cap.isOpened():
@@ -1324,20 +1513,21 @@ def detect_video(args: argparse.Namespace) -> None:
             cv2.imwrite(snapshot_path, frame_to_snapshot)
             print(f"manual_snapshot_saved={snapshot_path}")
             
-            def show_snapshot_popup():
+            def show_snapshot_popup(path=snapshot_path):
                 try:
                     import tkinter as tk
                     root = tk.Tk()
+                    _apply_tk_icon(root)
                     root.title("Snapshot Saved")
                     root.attributes("-topmost", True)
-                    root.geometry("300x100")
-                    label = tk.Label(root, text="Snapshot saved!", font=("Arial", 16), fg="green")
-                    label.pack(expand=True)
-                    root.after(1500, lambda: root.destroy())
+                    root.geometry("520x90")
+                    tk.Label(root, text="Snapshot saved!", font=("Arial", 14, "bold"), fg="green").pack(pady=(10, 2))
+                    tk.Label(root, text=path, font=("Arial", 9), fg="#333333", wraplength=500).pack(pady=(0, 8))
+                    root.after(2000, lambda: root.destroy())
                     root.mainloop()
                 except Exception:
                     pass
-            
+
             threading.Thread(target=show_snapshot_popup, daemon=True).start()
         except cv2.error as exc:
             print(f"manual_snapshot_warning={exc}")
@@ -1349,6 +1539,8 @@ def detect_video(args: argparse.Namespace) -> None:
 
     if args.display:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        cv2.waitKey(1)  # pump message queue so the window is registered with the OS
+        _apply_cv2_window_icon(window_name)
         # Maximize the window at startup (not fullscreen)
         try:
             cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
@@ -1387,7 +1579,12 @@ def detect_video(args: argparse.Namespace) -> None:
                     if item is None:
                         return
 
-                    snapshot_path, snapshot_image, trigger_detected = item
+                    # Support old and new tuple formats for backward compatibility
+                    if len(item) == 4:
+                        snapshot_path, snapshot_image, trigger_detected, detected_names = item
+                    else:
+                        snapshot_path, snapshot_image, trigger_detected = item
+                        detected_names = []
 
                     save_started_at = time.perf_counter()
                     cv2.imwrite(snapshot_path, snapshot_image)
@@ -1398,7 +1595,7 @@ def detect_video(args: argparse.Namespace) -> None:
 
                     if args.telegram_send:
                         telegram_started_at = time.perf_counter()
-                        send_snapshot_via_telegram(args, snapshot_path, trigger_detected)
+                        send_snapshot_via_telegram(args, snapshot_path, trigger_detected, detected_names)
                         log_timing("telegram_send", telegram_started_at)
                 finally:
                     snapshot_queue.task_done()
@@ -1429,6 +1626,7 @@ def detect_video(args: argparse.Namespace) -> None:
     reconnect_attempts = 0
     last_inference_ts = 0.0
     last_status_text: str | None = None
+    last_cat_found: bool = False
     last_plot_detections: list[tuple[tuple[int, int, int, int], int, float]] = []
     last_plot_detections_ts = 0.0
     detection_overlay_hold_s = 0.8
@@ -1437,6 +1635,7 @@ def detect_video(args: argparse.Namespace) -> None:
     beep_lock = threading.Lock()
     beep_active = False
     runtime_info_printed = False
+    options_popup_active = threading.Event()
 
     def trigger_beep_if_needed(found: bool) -> None:
         nonlocal last_beep_ts, beep_active
@@ -1485,6 +1684,16 @@ def detect_video(args: argparse.Namespace) -> None:
                 if reader.is_alive():
                     print(f"stream_read_warning=cap.read() timed out after {read_timeout_s:.0f}s")
                     ok, frame = False, None
+                    # Force immediate reconnect: spawning another cap.read() on a
+                    # timed-out capture object accumulates zombie threads sharing
+                    # FFmpeg's internal decoder state.  After enough timeouts this
+                    # triggers the "fctx->async_lock failed" C-level assertion that
+                    # kills the process and prevents the recording from being
+                    # finalized.  Setting the failure counter to the threshold here
+                    # makes the existing reconnect path release the cap immediately
+                    # so the zombie thread unblocks and exits, and a fresh capture
+                    # object is opened for the next read.
+                    consecutive_read_failures = max_consecutive_read_failures
                 else:
                     ok, frame = read_result[0], read_result[1]
             except Exception as exc:
@@ -1537,8 +1746,9 @@ def detect_video(args: argparse.Namespace) -> None:
                     if last_plot_detections:
                         draw_cached_detections(display_frame, last_plot_detections, model.names)
                     if last_status_text is not None:
-                        draw_status_banner(display_frame, last_status_text)
+                        draw_status_banner(display_frame, last_status_text, cat_detected=last_cat_found)
                     draw_watermark_q(display_frame, live_audio_enabled)
+                    draw_version_banner(display_frame)
                     draw_recording_indicator(display_frame, interactive_recording_writer is not None)
                     frame_for_display = (
                         fit_frame_to_screen(display_frame, display_max_width, display_max_height)
@@ -1577,8 +1787,9 @@ def detect_video(args: argparse.Namespace) -> None:
                     if last_plot_detections:
                         draw_cached_detections(display_frame, last_plot_detections, model.names)
                     if last_status_text is not None:
-                        draw_status_banner(display_frame, last_status_text)
+                        draw_status_banner(display_frame, last_status_text, cat_detected=last_cat_found)
                     draw_watermark_q(display_frame, live_audio_enabled)
+                    draw_version_banner(display_frame)
                     draw_recording_indicator(display_frame, interactive_recording_writer is not None)
                     frame_for_display = (
                         fit_frame_to_screen(display_frame, display_max_width, display_max_height)
@@ -1634,6 +1845,19 @@ def detect_video(args: argparse.Namespace) -> None:
                 detection_smoothing_alpha,
                 detection_smoothing_iou_threshold,
             )
+            # Collect detected trigger class names for Telegram
+            detected_trigger_names = []
+            if result.boxes is not None and len(result.boxes) > 0:
+                class_ids = result.boxes.cls.tolist()
+                # model.names can be dict or list
+                for cls_id in class_ids:
+                    if int(cls_id) in trigger_ids:
+                        if isinstance(model.names, dict):
+                            name = str(model.names.get(int(cls_id), str(cls_id)))
+                        else:
+                            name = str(model.names[int(cls_id)]) if 0 <= int(cls_id) < len(model.names) else str(cls_id)
+                        if name.capitalize() + '!' not in [n.capitalize() + '!' for n in detected_trigger_names]:
+                            detected_trigger_names.append(name)
             now = time.monotonic()
             if current_detections:
                 last_plot_detections = current_detections
@@ -1644,10 +1868,11 @@ def detect_video(args: argparse.Namespace) -> None:
             trigger_beep_if_needed(found)
 
             annotated = result.plot()
-            text = "CAT DETECTED!" if found else "NO CAT YET"
+            text = "THE CAT IS HERE!!!" if found else "NO CAT YET..."
             last_status_text = text
+            last_cat_found = found
 
-            draw_status_banner(annotated, text)
+            draw_status_banner(annotated, text, cat_detected=found)
 
 
 
@@ -1662,7 +1887,7 @@ def detect_video(args: argparse.Namespace) -> None:
                     last_snapshot_ts = now
                     snapshots_saved += 1
                     if snapshot_queue is not None:
-                        snapshot_queue.put((snapshot_path, annotated.copy(), trigger_found))
+                        snapshot_queue.put((snapshot_path, annotated.copy(), trigger_found, detected_trigger_names))
 
             if writer is not None:
                 try:
@@ -1711,8 +1936,9 @@ def detect_video(args: argparse.Namespace) -> None:
                 if last_plot_detections:
                     draw_cached_detections(display_frame, last_plot_detections, model.names)
                 if last_status_text is not None:
-                    draw_status_banner(display_frame, last_status_text)
+                    draw_status_banner(display_frame, last_status_text, cat_detected=last_cat_found)
                 draw_watermark_q(display_frame, live_audio_enabled)
+                draw_version_banner(display_frame)
                 draw_recording_indicator(display_frame, interactive_recording_writer is not None)
                 if args.fit_display:
                     frame_for_display = fit_frame_to_screen(
@@ -1745,6 +1971,7 @@ def detect_video(args: argparse.Namespace) -> None:
                             import tkinter as tk
                             from tkinter import scrolledtext
                             root = tk.Tk()
+                            _apply_tk_icon(root)
                             root.title("Cat Detector: Current Options")
                             root.attributes("-topmost", True)
                             root.resizable(True, True)
@@ -1784,11 +2011,21 @@ def detect_video(args: argparse.Namespace) -> None:
                             root.mainloop()
                         except Exception:
                             print(options_text)
-                    options = []
-                    for k, v in sorted(vars(args).items()):
-                        options.append(f"{k} = {v}")
-                    options_text = "\n".join(options)
-                    threading.Thread(target=show_options_popup, args=(options_text,), daemon=True).start()
+                        finally:
+                            options_popup_active.clear()
+                    if not options_popup_active.is_set():
+                        options_popup_active.set()
+                        _path_keys = {
+                            "model", "output", "snapshot_dir", "telegram_config",
+                            "source", "output_dir", "save",
+                        }
+                        options = []
+                        for k, v in sorted(vars(args).items()):
+                            if k in _path_keys and isinstance(v, str) and v:
+                                v = os.path.abspath(v)
+                            options.append(f"{k} = {v}")
+                        options_text = "\n".join(options)
+                        threading.Thread(target=show_options_popup, args=(options_text,), daemon=True).start()
                 write_interactive_recording_frame(display_frame)
     finally:
         stop_event.set()
@@ -1798,6 +2035,8 @@ def detect_video(args: argparse.Namespace) -> None:
         if interactive_recording_writer is not None:
             stop_interactive_recording()
         disable_live_audio()
+        if args.keep_awake:
+            set_keep_awake(False)
         if args.display:
             cv2.destroyAllWindows()
         if snapshot_queue is not None:
@@ -2105,6 +2344,12 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Print timing diagnostics for inference, snapshot save, telegram send, and video write",
+    )
+    video_parser.add_argument(
+        "--keep-awake",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Prevent the system from sleeping and keep the screen on while running (default: enabled)",
     )
 
     batch_parser = subparsers.add_parser(

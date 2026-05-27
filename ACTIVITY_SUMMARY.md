@@ -963,3 +963,109 @@ When the RTSP stream dies mid-transfer, `cap.read()` calls into FFmpeg which blo
 - Reconnection attempts are properly spaced and logged with timestamps.
 - Successful reconnections are confirmed with an info message.
 - The stream recovers automatically when the network is restored.
+
+## 42. Video Stream Lag Performance Analysis and Fix
+
+### Issue
+After running `detect_cat.bat` for a few minutes, the video output lagged by more than 60 seconds and continued growing.
+
+### Hardware and Stream Profile
+- Stream: Tapo C310, main profile (stream1) — 2304×1296 @ 14 fps
+- PC: Intel i7-1360P, CPU inference
+- Model: yolo26n, imgsz=1280
+
+### Measured Per-Component Costs
+
+| Component | Time |
+|---|---|
+| Inference (yolo26n, imgsz=1280) | ~139ms |
+| Frame resize (2304×1296 → screen) | ~17ms |
+| Overlay drawing | ~5ms |
+| Frame copy | ~4ms |
+| **Total per inference frame** | **~165ms** |
+
+### Additional Benchmarks
+
+| Model / imgsz | Inference Time | FPS |
+|---|---|---|
+| yolo26n @ imgsz=1280 | 139ms | 7.2 |
+| yolo26n @ imgsz=960 | 85ms | 11.8 |
+| yolo26n @ imgsz=640 | 51ms | 19.6 |
+
+### Root Cause Analysis
+With `--frame-skip 1` (process every 2nd frame), 7 frames/sec needed inference. Each inference frame cost ~165ms, but the per-frame budget was only 143ms (1000ms ÷ 7). The 22ms/frame deficit accumulated at ~154ms/sec, reaching 60 seconds of lag after ~6.5 minutes — matching the observed behavior exactly.
+
+### Fix Applied
+Changed `detect_cat.bat` defaults:
+
+| Setting | Before | After | Impact |
+|---|---|---|---|
+| `--imgsz` | 1280 | 1280 | Kept for detection quality |
+| `--frame-skip` | 1 | 3 | Process every 4th frame (~3.5 fps) |
+
+New budget: 1000ms ÷ 3.5 = **286ms** per inference frame vs **~165ms** cost — ~120ms headroom.
+
+### Alternatives Considered
+- `imgsz=960` with `frame-skip 2` was tested first (111ms total, 213ms budget) but user preferred keeping imgsz=1280 for better detection quality.
+- Sub-stream (stream2) at 640×360 @ 14fps was checked but rejected due to much lower video quality.
+
+### Result
+- Video stream stays real-time indefinitely with the updated settings.
+- Detection quality preserved at imgsz=1280 for the 2304×1296 stream.
+
+## 43. Session: UI Enhancements, Versioning, and Icons
+
+### 43.1 Keep-Awake / Prevent Sleep
+
+A `--keep-awake` option (default: enabled) was added to prevent the system from sleeping and the screen from turning off while the program is running.
+
+Implementation:
+- Uses `kernel32.SetThreadExecutionState` with `ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED` flags on entry.
+- Restores normal power policy with `ES_CONTINUOUS` only in the `finally` block when the program exits.
+- Controllable via `--keep-awake` / `--no-keep-awake` CLI flags.
+
+### 43.2 Snapshot-Saved Popup Improvements
+
+The "Snapshot saved!" popup that appears after pressing `s` was improved:
+- Duration extended from 1.5 seconds to 2 seconds.
+- Full absolute path to the saved snapshot file is now shown below the title.
+- Window width increased to 520 px to accommodate typical paths.
+
+### 43.3 Full Paths in the Options Popup
+
+When pressing `h` to view the current runtime options, path-valued arguments (`model`, `output`, `snapshot_dir`, `telegram_config`, `source`, `output_dir`, `save`) are now expanded to their absolute paths via `os.path.abspath` before display.
+
+### 43.4 Program Version Banner
+
+A `VERSION` constant (`"1.0"`, major.minor) was added near the top of the source file.
+
+A `draw_version_banner()` function was added to draw `"Cat Detector 1.0"` in the bottom-right corner of the video window using the same font (`FONT_HERSHEY_SIMPLEX`), scale (`1.2`), thickness (`2`), and color scheme (pale-yellow background, dark-blue text) as the existing controls watermark.
+
+The banner is rendered at all three display-branch locations in the main loop alongside the controls watermark.
+
+### 43.5 Options-Popup Race Condition Fix
+
+The `h` key handler occasionally failed to show the popup (~2 in 10 presses).
+
+Root cause:
+- Two concurrent `tk.Tk()` instances can be created when `h` is pressed while a previous popup thread is still initializing. Tkinter on Windows does not support multiple simultaneous `Tk()` roots in different threads and silently fails.
+
+Fix:
+- Added a `threading.Event` flag (`options_popup_active`).
+- The popup thread sets the flag on entry and clears it in `finally` when the window is destroyed.
+- The `h` handler only spawns a new thread if the flag is not already set.
+
+### 43.6 Custom Cat Icon for All Windows
+
+A programmatically drawn 64×64 happy cat icon was added and applied to all application windows:
+- Main OpenCV video window (via `SendMessageW(WM_SETICON)` with a minimal ICO wrapper around the PNG)
+- "Snapshot Saved" tkinter popup
+- "Current Options" tkinter popup
+
+The icon is generated once at first use and cached. If a `cat_icon.png` file exists in the project root, that file is used instead (loaded raw as PNG bytes).
+
+### 43.7 Google Android Cat Emoji Icon
+
+The user provided the Google Android smiling cat emoji (😺, U+1F63A, 512×512 PNG from `images.emojiterra.com`). This was downloaded and saved as `cat_icon.png` in the project root.
+
+The icon loading logic in `_get_cat_icon_bytes()` reads `cat_icon.png` from the project directory if present, so no code change was needed — the downloaded file is picked up automatically on next run.

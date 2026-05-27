@@ -116,3 +116,23 @@ Ordered list of user prompts used during development.
 104. Add a datetime timestamp to the log messages.
 105. Check, explain and fix why when testing with wifi disabled to simulate stream failure the program stopped with h264 decode error and no reconnection (cap.read() hung indefinitely).
 106. Append at the end of ACTIVITY_SUMMARY.md and PROMPTS_USED.md a detailed explanation of the changes. Update then README.md.
+
+## Session: Video Stream Lag Fix
+
+107. Check if improvement can be done in terms of performance when running on this pc using the detect_cat.bat script. Now the video output starts lagging by more than 60 seconds after a few minutes.
+108. Bump it back as you suggested, want that better video quality. (Reverted imgsz to 1280, increased frame-skip to 3.)
+109. Append the detailed performance analysis to ACTIVITY_SUMMARY, append the prompts to PROMPTS_USED.md, etc.
+
+## Session: UI Enhancements, Versioning, and Icons
+
+110. Add option, by default true, to keep the screen on and prevent computer going to sleep when the program is running.
+111. Make the popup "snapshot saved" stay on the screen for 2 seconds and display the full path to the snapshot file.
+112. When options are displayed using the h command, print full paths.
+113. Add versioning. Display on the bottom right corner, using the same fonts and sizes as for the Controls info, the version of the program as in this example "Cat Detector <version>".
+114. Use only minor and major numbers for versioning.
+115. Why when pressing h the options window doesn't show up in some 2 of 10 attempts? Fix.
+116. Use bold fonts for the program version displayed in the bottom right corner of the window.
+117. Revert the change to use bold for the program name on the bottom right corner.
+118. Use a happy cat icon in the main window and all the popups instead of the current icons.
+119. Save and use the following emoji: [Google Android smiling cat emoji, 512×512]
+120. Append to prompts_used.md, update readme.md and activity_summary.md. Commit changes and sync with github.

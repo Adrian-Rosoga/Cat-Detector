@@ -224,6 +224,9 @@ Alert options:
 - `--beep-on-cat` / `--no-beep-on-cat` to enable or disable alert sound
 - `--beep-cooldown` to control minimum seconds between alerts (default: 3.0)
 
+System options:
+- `--keep-awake` / `--no-keep-awake` to prevent system sleep and screen-off while running (default: enabled)
+
 Detection tuning:
 - `--imgsz` increases inference resolution; this helps small/far cats at the cost of speed
 - lower `--conf` if small cats are being missed
@@ -297,6 +300,40 @@ Recommended quick validation command:
 ```bat
 detect_cat.bat --model yolo26s video --tapo-ip 192.168.1.111 --tapo-username YOUR_USER --tapo-password YOUR_PASSWORD --tapo-profile main --capture-buffer-size 1 --frame-skip 1 --display --max-frames 300 --beep-cooldown 1.5
 ```
+
+## UX and System Improvements
+
+### Keep-Awake (Prevent Sleep)
+
+By default, the program prevents the system from sleeping and the screen from turning off while running.
+
+- Controlled via `--keep-awake` / `--no-keep-awake` (default: enabled).
+- Uses the Windows `SetThreadExecutionState` API to block both system sleep and display power-off.
+- Automatically restored to normal power policy when the program exits.
+
+### Program Version Display
+
+The program version (`Cat Detector 1.0`) is rendered in the bottom-right corner of the video window using the same font and color scheme as the controls watermark.
+
+### Snapshot-Saved Popup
+
+The popup shown after pressing `s` to take a manual snapshot now:
+- Stays visible for 2 seconds (up from 1.5 s).
+- Displays the full absolute path to the saved file below the title.
+
+### Options Popup (h key)
+
+Path-type settings in the options popup (`model`, `output`, `snapshot_dir`, `telegram_config`, `source`, `output_dir`, `save`) are now shown as full absolute paths.
+
+### App Icon
+
+A Google Android smiling cat emoji (😺) is used as the application icon in the OpenCV video window and all tkinter popups (Snapshot Saved, Current Options).
+
+The icon file `cat_icon.png` in the project root is loaded automatically; a programmatic fallback is used if the file is absent.
+
+### h-Key Popup Reliability Fix
+
+The options popup (h key) could silently fail to appear ~2 in 10 presses due to concurrent `tk.Tk()` instances across threads. Fixed with a `threading.Event` guard that ensures only one popup exists at a time.
 
 ## Device Selection and Intel GPU Acceleration
 
@@ -396,3 +433,17 @@ Run with:
 ```
 
 This configuration trades ~58 ms per-frame latency (GPU) for reliable sustained throughput monitoring, making it suitable for the M900-CFR's dual-core CPU and integrated GPU architecture.
+
+## Performance Tuning (Main PC)
+
+The main PC (Intel i7-1360P) runs the Tapo C310 main stream at 2304×1296 @ 14 fps. Measured inference costs:
+
+| Model / imgsz | Inference | Effective FPS |
+|---|---|---|
+| yolo26n @ 1280 | 139ms | 7.2 |
+| yolo26n @ 960 | 85ms | 11.8 |
+| yolo26n @ 640 | 51ms | 19.6 |
+
+With display overhead (~26ms for resize, overlays, frame copy), the total per-frame cost at imgsz=1280 is ~165ms. The `detect_cat.bat` launcher uses `--frame-skip 3` (process every 4th frame) to keep the stream real-time with ~120ms headroom.
+
+If lag appears, reduce `--frame-skip` value or lower `--imgsz` (960 is a good compromise).
