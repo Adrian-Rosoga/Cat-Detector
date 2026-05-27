@@ -1069,3 +1069,29 @@ The icon is generated once at first use and cached. If a `cat_icon.png` file exi
 The user provided the Google Android smiling cat emoji (😺, U+1F63A, 512×512 PNG from `images.emojiterra.com`). This was downloaded and saved as `cat_icon.png` in the project root.
 
 The icon loading logic in `_get_cat_icon_bytes()` reads `cat_icon.png` from the project directory if present, so no code change was needed — the downloaded file is picked up automatically on next run.
+
+## 44. Session: Window Close Button Fix, Startup Maximize, Version 1.1
+
+### 44.1 Taskbar Icon Attempts (Reverted)
+
+Several approaches were tried to show the cat icon in the Windows taskbar when launched via `detect_cat.bat`:
+- Setting `SetCurrentProcessExplicitAppUserModelID` + `GetConsoleWindow` + `WM_SETICON` from Python.
+- Creating a `.lnk` shortcut with the cat icon via `WScript.Shell` COM.
+
+Neither worked reliably: the batch file's `cmd.exe` process owns the console window, so Python's icon changes are overridden. All code changes from these attempts were reverted. No production code was modified as a result.
+
+### 44.2 Window Close Button Fix
+
+**Problem:** Clicking the X button on the OpenCV video window caused it to flicker — disappear briefly and reappear — instead of closing the program.
+
+**Root cause:** When X is clicked, OpenCV destroys the window internally but the main loop called `cv2.imshow()` on the very next iteration, which silently recreates it.
+
+**Fix:** Added `cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1` check after every `cv2.waitKey(1)` call at all three display branches in the main loop. When the property drops below 1 (window closed), it triggers `stop_event.set()` and breaks — identical behaviour to pressing `q`.
+
+### 44.3 Startup Window Maximize
+
+The OpenCV window now starts maximized (not fullscreen) on Windows via `ShowWindow(hwnd, SW_MAXIMIZE)` called immediately after `namedWindow`. This fills the screen while keeping the title bar, taskbar, and resize handles accessible. On non-Windows, falls back to OpenCV's `WINDOW_FULLSCREEN`.
+
+### 44.4 Version Bump to 1.1
+
+`VERSION` constant incremented from `"1.0"` to `"1.1"`. The version banner in the bottom-right corner of the video window now shows `Cat Detector 1.1`.

@@ -35,7 +35,7 @@ except ImportError:
 
 _RAW_PRINT = builtins.print
 
-VERSION = "1.0"
+VERSION = "1.1"
 
 _LOG_COLORS = {
     "INFO": "\033[96m",
@@ -1541,9 +1541,16 @@ def detect_video(args: argparse.Namespace) -> None:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         cv2.waitKey(1)  # pump message queue so the window is registered with the OS
         _apply_cv2_window_icon(window_name)
-        # Maximize the window at startup (not fullscreen)
+        # Maximize the window at startup
         try:
-            cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+            if os.name == "nt":
+                import ctypes as _ct
+                hwnd = _ct.windll.user32.FindWindowW(None, window_name)
+                if hwnd:
+                    SW_MAXIMIZE = 3
+                    _ct.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
+            else:
+                cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         except Exception:
             pass
         print("window_controls=q quit | h options | r toggle recording | s save snapshot | a toggle live audio")
@@ -1761,7 +1768,7 @@ def detect_video(args: argparse.Namespace) -> None:
                         print(f"display_warning={exc}")
                         break
                     key = cv2.waitKey(1) & 0xFF
-                    if key == ord("q"):
+                    if key == ord("q") or cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                         stop_event.set()
                         break
                     elif key == ord("r"):
@@ -1802,7 +1809,7 @@ def detect_video(args: argparse.Namespace) -> None:
                         print(f"display_warning={exc}")
                         break
                     key = cv2.waitKey(1) & 0xFF
-                    if key == ord("q"):
+                    if key == ord("q") or cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                         stop_event.set()
                         break
                     elif key == ord("r"):
@@ -1952,7 +1959,7 @@ def detect_video(args: argparse.Namespace) -> None:
                     print(f"display_warning={exc}")
                     break
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
+                if key == ord("q") or cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                     stop_event.set()
                     break
                 elif key == ord("r"):

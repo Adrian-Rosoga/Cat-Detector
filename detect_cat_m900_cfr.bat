@@ -48,8 +48,8 @@ if not defined CAT_DETECTOR_DEVICE (
 	set "CAT_DETECTOR_DEVICE=CPU"
 )
 
-if not defined SNAPSHOT_COOLDOWN (
-	set "SNAPSHOT_COOLDOWN=2"
+if not defined SNAPSHOT_COOLDOWN_SECONDS (
+	set "SNAPSHOT_COOLDOWN_SECONDS=2"
 )
 
 if not defined TAPO_IP (
@@ -83,7 +83,7 @@ python cat_detector.py ^
 	--frame-skip 1 ^
 	--display ^
 	--beep-cooldown 1.5 ^
-	--snapshot-cooldown "%SNAPSHOT_COOLDOWN%" ^
+	--snapshot-cooldown "%SNAPSHOT_COOLDOWN_SECONDS%" ^
 	--telegram-send ^
 	--telegram-config telegram-send.conf ^
 	--no-alert-person ^

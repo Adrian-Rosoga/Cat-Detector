@@ -136,3 +136,16 @@ Ordered list of user prompts used during development.
 118. Use a happy cat icon in the main window and all the popups instead of the current icons.
 119. Save and use the following emoji: [Google Android smiling cat emoji, 512×512]
 120. Append to prompts_used.md, update readme.md and activity_summary.md. Commit changes and sync with github.
+
+## Session: Window Close Button, Maximize, Taskbar Icon Attempts
+
+121. Use the cat icon for the program icon in the taskbar as now it uses the default python icon.
+122. Use that icon when starting the program via the detect_cat.bat batch file.
+123. That didn't work, the same icon appears. Check and fix.
+124. That didn't work. Revert and suggest a different option than using a bat file.
+125. Implement the first suggestion, use lnk.
+126. Double clicking the lnk didn't work, still the same python default icon in the taskbar.
+127. Stop, don't use pyinstaller. Revert the attempts to make the cat icon for the taskbar.
+128. The program doesn't close when pressing the close window button on top left. The window disappears for a short moment and then reappears. Why and fix.
+129. Maximise the window when the program starts.
+130. Update the md files as before. Increment the minor program version. Commit and sync.

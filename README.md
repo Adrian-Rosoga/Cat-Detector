@@ -335,6 +335,14 @@ The icon file `cat_icon.png` in the project root is loaded automatically; a prog
 
 The options popup (h key) could silently fail to appear ~2 in 10 presses due to concurrent `tk.Tk()` instances across threads. Fixed with a `threading.Event` guard that ensures only one popup exists at a time.
 
+### Window Close Button
+
+Clicking the X button on the video window now cleanly stops the program (same as pressing `q`). Previously the window would flicker — disappear and immediately reappear — because `cv2.imshow()` was recreating it on the next loop iteration.
+
+### Startup Maximize
+
+The video window starts maximized (fills the screen while keeping the title bar and taskbar visible).
+
 ## Device Selection and Intel GPU Acceleration
 
 The detector now supports an explicit `--device` option for Ultralytics inference routing.

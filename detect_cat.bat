@@ -48,8 +48,8 @@ if not defined CAT_DETECTOR_DEVICE (
 	set "CAT_DETECTOR_DEVICE=auto"
 )
 
-if not defined SNAPSHOT_COOLDOWN (
-	set "SNAPSHOT_COOLDOWN=2"
+if not defined SNAPSHOT_COOLDOWN_SECONDS (
+	set "SNAPSHOT_COOLDOWN_SECONDS=2"
 )
 
 if not defined TAPO_IP (
@@ -69,28 +69,30 @@ echo Starting the Cat Detector...
 echo.
 echo.
 
+REM imgsz 1280 still lags even with frame-skip 3, using 960 instead
 python cat_detector.py ^
 	--model "%CAT_DETECTOR_MODEL%" ^
 	--device "%CAT_DETECTOR_DEVICE%" ^
 	--conf 0.20 ^
-	--imgsz 1280 ^
+	--imgsz 960 ^
 	video ^
 	--tapo-ip %TAPO_IP% ^
 	--tapo-username "%TAPO_USERNAME%" ^
 	--tapo-password "%TAPO_PASSWORD%" ^
 	--tapo-profile main ^
 	--capture-buffer-size 1 ^
-	--frame-skip 1 ^
+	--frame-skip 3 ^
 	--display ^
 	--beep-cooldown 1.5 ^
-	--snapshot-cooldown "%SNAPSHOT_COOLDOWN%" ^
+	--snapshot-cooldown "%SNAPSHOT_COOLDOWN_SECONDS%" ^
 	--telegram-send ^
 	--telegram-config telegram-send.conf ^
-	--no-alert-person ^
 	--no-alert-bird ^
 	--no-alert-dog ^
 	--no-alert-bear %*
 set "EXIT_CODE=%ERRORLEVEL%"
+
+pause
 
 popd >nul
 exit /b %EXIT_CODE%
